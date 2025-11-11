@@ -105,10 +105,10 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     
     # Check 1: Input length
     if len(user_input.strip()) < 3:
-        return False, "⚠️ Please provide more details about your travel plans."
+        return False, "Please provide more details about your travel plans."
     
     if len(user_input) > 1000:
-        return False, "⚠️ Your message is too long. Please keep it under 1000 characters."
+        return False, "Your message is too long. Please keep it under 1000 characters."
     
     # Check 2: Inappropriate content (basic filters)
     inappropriate_keywords = [
@@ -411,7 +411,7 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     return {"final_state": json.dumps(structured_data, indent=2)}
 
 
-# ============== MAIN AGENT WITH GUARDRAILS ==============
+
 
 def run_agent(user_text: str, session_id: str = "default") -> str:
     """Main agent workflow with guardrails"""
@@ -434,16 +434,16 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     formatted_history = format_chat_history()
 
     try:
-        with st.spinner("🔍 Analyzing your request..."):
+        with st.spinner("Analyzing your request..."):
             structured_data = extract_chain.invoke({
                 "user_text": user_text,
                 "chat_history": formatted_history
             })
 
-        with st.spinner("✈️ Finding best options..."):
+        with st.spinner("Finding best options..."):
             tool_output = simulate_tool_calls(structured_data)
 
-        with st.spinner("📝 Preparing your itinerary..."):
+        with st.spinner("Preparing your plan..."):
             final_output = summary_chain.invoke({
                 "final_state": tool_output["final_state"],
                 "chat_history": formatted_history,
