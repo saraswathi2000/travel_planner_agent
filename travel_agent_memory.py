@@ -121,7 +121,7 @@ if "all_sessions" not in st.session_state:
     st.session_state.all_sessions = ["default"]
 
 
-# ============== HELPER FUNCTIONS ==============
+
 
 def format_chat_history() -> str:
     """Format chat history as a readable string"""
@@ -195,7 +195,7 @@ def create_new_session():
         st.session_state.all_sessions.append(new_session_id)
 
 
-# ============== LLM CHAINS ==============
+
 
 extract_prompt = ChatPromptTemplate.from_template("""
 You are an assistant that extracts structured travel details from a user's request.
@@ -369,7 +369,7 @@ Keep responses concise and relevant to what the user asked. Don't repeat informa
 summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
 
 
-# ============== TOOL EXECUTION ==============
+
 
 def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     """Simulate tool calls to fetch flight and hotel data"""
@@ -420,16 +420,16 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 
     formatted_history = format_chat_history()
 
-    with st.spinner("🔍 Extracting travel details..."):
+    with st.spinner("Extracting travel details..."):
         structured_data = extract_chain.invoke({
             "user_text": user_text,
             "chat_history": formatted_history
         })
 
-    with st.spinner("✈️ Finding flights and hotels..."):
+    with st.spinner("Finding flights and hotels..."):
         tool_output = simulate_tool_calls(structured_data)
 
-    with st.spinner("Creating your itinerary..."):
+    with st.spinner("Creating your plan..."):
         final_output = summary_chain.invoke({
             "final_state": tool_output["final_state"],
             "chat_history": formatted_history,
@@ -505,7 +505,7 @@ with st.sidebar:
     
     if st.button("Clear Current Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
-        st.success("✅ Cleared!")
+        st.success("Cleared!")
         st.rerun()
     
 #     # Footer info
