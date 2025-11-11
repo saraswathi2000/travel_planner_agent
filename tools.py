@@ -116,7 +116,8 @@ def save_message_to_sheet(
             ])
         
         # Append new message
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ist = pytz.timezone('Asia/Kolkata')
+        timestamp = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
         message_id = f"{session_id}_{timestamp.replace(' ', '_').replace(':', '-')}"
         
         worksheet.append_row([
