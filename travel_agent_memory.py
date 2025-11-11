@@ -21,10 +21,9 @@ from tools import (
 )
 
 # Configuration
-if "OPENAI_API_KEY" in st.secrets:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-else:
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-proj-Awzlnnkm4Vf7llchxQYOKICR15MYx_xUI51LhOwVnRjPCcDQigA")
+
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+
 
 SHEET_NAME = "AI_Agent_data"
 
@@ -206,18 +205,18 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     formatted_history = format_chat_history()
 
     # Extract structured data
-    with st.spinner("🔍 Extracting travel details..."):
+    with st.spinner("Extracting travel details..."):
         structured_data = extract_chain.invoke({
             "user_text": user_text,
             "chat_history": formatted_history
         })
 
     # Simulate tool calls
-    with st.spinner("✈️ Finding flights and hotels..."):
+    with st.spinner(" Finding flights and hotels..."):
         tool_output = simulate_tool_calls(structured_data)
 
     # Generate final summary
-    with st.spinner("📝 Creating your itinerary..."):
+    with st.spinner(" Creating your plan"):
         final_output = summary_chain.invoke({
             "final_state": tool_output["final_state"],
             "chat_history": formatted_history
@@ -236,52 +235,52 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 
 # Sidebar
 with st.sidebar:
-    st.title("🧳 Travel Planner")
+    # st.title("🧳 Travel Planner")
     st.markdown("---")
     
     # Session Management
-    st.subheader("📝 Session Management")
+    # st.subheader("📝 Session Management")
     
-    # Get all available sessions
-    all_sessions = get_all_sessions(SHEET_NAME)
-    if not all_sessions:
-        all_sessions = ["default"]
+    # # Get all available sessions
+    # all_sessions = get_all_sessions(SHEET_NAME)
+    # if not all_sessions:
+    #     all_sessions = ["default"]
     
-    # Session selector
-    selected_session = st.selectbox(
-        "Select Session",
-        options=all_sessions,
-        index=all_sessions.index(st.session_state.session_id) if st.session_state.session_id in all_sessions else 0
-    )
+    # # Session selector
+    # selected_session = st.selectbox(
+    #     "Select Session",
+    #     options=all_sessions,
+    #     index=all_sessions.index(st.session_state.session_id) if st.session_state.session_id in all_sessions else 0
+    # )
     
-    # New session input
-    new_session = st.text_input("Or create new session:", placeholder="e.g., paris-trip-2025")
+    # # New session input
+    # new_session = st.text_input("Or create new session:", placeholder="e.g., paris-trip-2025")
     
-    if st.button("Switch/Create Session"):
-        if new_session:
-            st.session_state.session_id = new_session
-            st.session_state.history_loaded = False
-            st.rerun()
-        elif selected_session != st.session_state.session_id:
-            st.session_state.session_id = selected_session
-            st.session_state.history_loaded = False
-            st.rerun()
+    # if st.button("Switch/Create Session"):
+    #     if new_session:
+    #         st.session_state.session_id = new_session
+    #         st.session_state.history_loaded = False
+    #         st.rerun()
+    #     elif selected_session != st.session_state.session_id:
+    #         st.session_state.session_id = selected_session
+    #         st.session_state.history_loaded = False
+    #         st.rerun()
     
-    st.markdown("---")
+    # st.markdown("---")
     
     # Action buttons
-    st.subheader("⚙️ Actions")
+    st.subheader("Actions")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🔄 Restore History"):
+        if st.button(" Restore History"):
             count = restore_chat_history(st.session_state.session_id)
             st.success(f"Restored {count} messages")
             st.rerun()
     
     with col2:
-        if st.button("🗑️ Clear History"):
+        if st.button("Clear History"):
             clear_history(st.session_state.session_id)
             st.success("History cleared!")
             st.rerun()
@@ -293,8 +292,8 @@ with st.sidebar:
     st.caption(f"**Total Messages:** {len(st.session_state.messages)}")
 
 # Main content
-st.title("✈️ AI Travel Planner Agent")
-st.markdown("Plan your perfect trip with AI assistance!")
+st.title(" Travel Planner Agent")
+# st.markdown("Plan your perfect trip with AI assistance!")
 
 # Load history on first run
 if not st.session_state.history_loaded:
@@ -313,7 +312,7 @@ with chat_container:
             st.markdown(message["content"])
 
 # Chat input
-if prompt := st.chat_input("Where would you like to go? (e.g., 'Plan a 5-day trip to Paris from NYC for $2000')"):
+if prompt := st.chat_input("Where would you like to go? "): #(e.g., 'Plan a 5-day trip to Paris from NYC for $2000')
     # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -337,4 +336,4 @@ if prompt := st.chat_input("Where would you like to go? (e.g., 'Plan a 5-day tri
 
 # Footer
 st.markdown("---")
-st.caption("💡 Tip: Start a new session for each trip to keep conversations organized!")
+# st.caption("💡 Tip: Start a new session for each trip to keep conversations organized!")
