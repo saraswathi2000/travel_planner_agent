@@ -414,8 +414,8 @@ with st.sidebar:
 # ============== MAIN CONTENT ==============
 
 # Header
-st.title("✈️ AI Travel Planner")
-st.caption("Plan your perfect trip with AI assistance")
+st.title("Travel Planner")
+# st.caption("Plan your perfect trip with AI assistance")
 
 # Load history on first run
 if not st.session_state.history_loaded:
@@ -429,7 +429,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Chat input
-if prompt := st.chat_input("Where would you like to go? (e.g., 'Plan a 5-day trip to Paris from NYC')"):
+if prompt := st.chat_input("Where would you like to go? "):
     # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
