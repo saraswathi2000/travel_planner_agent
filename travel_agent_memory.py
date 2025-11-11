@@ -119,7 +119,7 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     user_input_lower = user_input.lower()
     for keyword in inappropriate_keywords:
         if keyword in user_input_lower:
-            return False, "⚠️ I'm a travel planning assistant. Please ask travel-related questions only."
+            return False, "I'm a travel planning assistant. Please ask travel-related questions only."
     
     # Check 3: Non-travel queries (basic detection)
     non_travel_keywords = [
@@ -139,11 +139,11 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
     
     if has_non_travel and not has_travel_context:
-        return False, "⚠️ I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+        return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
     
     # Check 4: Spam detection (repeated characters/words)
     if re.search(r'(.)\1{10,}', user_input):  # 10+ repeated characters
-        return False, "⚠️ Please provide a valid travel query."
+        return False, "Please provide a valid travel query."
     
     return True, ""
 
@@ -156,7 +156,7 @@ def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, st
     
     # Check 1: Response length
     if len(ai_response.strip()) < 50:
-        return False, "⚠️ Response too short. Let me provide more details."
+        return False, "Response too short. Let me provide more details."
     
     # Check 2: Check if response is actually about travel
     travel_indicators = [
@@ -170,7 +170,7 @@ def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, st
     
     if not has_travel_content and len(st.session_state.messages) > 0:
         # Allow initial greetings, but subsequent messages should be travel-related
-        return False, "⚠️ Let me refocus on your travel plans. Could you tell me more about your trip?"
+        return False, "Let me refocus on your travel plans. Could you tell me more about your trip?"
     
     # Check 3: Ensure no harmful/inappropriate content in response
     harmful_patterns = [
@@ -178,7 +178,7 @@ def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, st
     ]
     
     if any(pattern in response_lower for pattern in harmful_patterns):
-        return False, "⚠️ I apologize, but I can only provide safe and legal travel advice."
+        return False, " I apologize, but I can only provide safe and legal travel advice."
     
     return True, ""
 
@@ -188,9 +188,9 @@ def validate_budget(budget_str: str) -> tuple[bool, str]:
     try:
         budget = float(budget_str)
         if budget < 100:
-            return False, "⚠️ Budget seems too low for a realistic trip. Please provide a budget of at least $100."
+            return False, "Budget seems too low for a realistic trip. Please provide a budget of at least $100."
         if budget > 1000000:
-            return False, "⚠️ Budget seems unrealistically high. Please provide a more reasonable budget."
+            return False, "Budget seems unrealistically high. Please provide a more reasonable budget."
         return True, ""
     except:
         return True, ""  # Let LLM handle parsing
@@ -426,7 +426,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     
     # Rate limiting (max 50 messages per session)
     if len(st.session_state.messages) >= 100:
-        return "⚠️ You've reached the maximum number of messages for this session. Please start a new trip."
+        return "You've reached the maximum number of messages for this session. Please start a new trip."
     
     st.session_state.chat_history.add_user_message(user_text)
     save_message_to_sheet(SHEET_NAME, "user", user_text, session_id)
@@ -461,7 +461,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         return final_output
         
     except Exception as e:
-        error_response = "⚠️ I encountered an error processing your request. Please try rephrasing your question."
+        error_response = " I encountered an error processing your request. Please try rephrasing your question."
         st.session_state.chat_history.add_ai_message(error_response)
         save_message_to_sheet(SHEET_NAME, "assistant", error_response, session_id)
         return error_response
@@ -472,14 +472,14 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 with st.sidebar:
     if st.button("🗑️ Clear Current Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
-        st.success("✅ Cleared!")
+        st.success(" Cleared!")
         st.rerun()
 
 
 # ============== MAIN CONTENT ==============
 
-st.title("✈️ Travel Planner")
-st.caption("Plan your perfect trip with AI assistance")
+st.title(" Travel Planner")
+# st.caption("Plan your perfect trip with AI assistance")
 
 # Load history on first run
 if not st.session_state.history_loaded:
@@ -493,7 +493,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Chat input with guardrails
-if prompt := st.chat_input("Where would you like to go? (e.g., 'Plan a 5-day trip to Paris from NYC')"):
+if prompt := st.chat_input("Where would you like to go?"):
     # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
