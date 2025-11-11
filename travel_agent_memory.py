@@ -206,24 +206,127 @@ Conversation so far:
 User Request:
 {user_text}
 
-IMPORTANT: 
-- If this is a NEW trip request, extract all details
-- If this is a FOLLOW-UP question about an existing trip, preserve previous trip details and only update what changed
-- Look at the chat history to understand context
+IMPORTANT INSTRUCTIONS:
+1. If this is a NEW trip request, extract all available details
+2. If this is a FOLLOW-UP question about an existing trip, preserve previous trip details and only update what changed
+3. Look at the chat history to understand context
+4. Check if this is providing missing information from a previous request
 
-Return a valid JSON with keys:
-origin_city, destination_city, start_date, end_date, trip_length_days, budget_usd, interests, query_type
+REQUIRED FIELDS FOR A COMPLETE TRIP:
+- origin_city (where traveling from)
+- destination_city (where traveling to)
+- start_date (departure date)
+- end_date (return date) OR trip_length_days
+- budget_usd (total budget)
 
-query_type should be one of: "new_trip", "hotel_query", "flight_query", "activity_query", "budget_query", "general_query", "modification"
+Return a valid JSON with these keys:
+- origin_city: string or null
+- destination_city: string or null
+- start_date: string (YYYY-MM-DD format) or null
+- end_date: string (YYYY-MM-DD format) or null
+- trip_length_days: integer or null
+- budget_usd: number or null
+- interests: list of strings or null
+- query_type: string (see below)
+- missing_fields: list of missing required fields (empty list if all present)
+- needs_clarification: boolean (true if critical info is missing)
+- clarification_question: string (specific question to ask user if needs_clarification is true)
+
+QUERY TYPES:
+- "new_trip": User wants to plan a new trip
+- "providing_details": User is providing missing information from previous request
+- "hotel_query": Asking about hotels
+- "flight_query": Asking about flights
+- "activity_query": Asking about activities/things to do
+- "budget_query": Asking about budget/costs
+- "general_query": General travel question
+- "modification": Modifying existing trip details
+
+LOGIC FOR MISSING FIELDS:
+1. For a NEW trip request, identify which required fields are missing
+2. If ANY required field is missing, set needs_clarification to true
+3. Generate a natural, conversational clarification_question that asks for the FIRST missing field
+4. List ALL missing fields in the missing_fields array
+5. If this is a follow-up providing missing info, set query_type to "providing_details"
 
 Examples:
-- "I want to go to Tokyo" → query_type: "new_trip"
-- "Tell me more about hotels" → query_type: "hotel_query" (preserve previous trip details)
-- "What about cheaper flights?" → query_type: "flight_query"
-- "What can I do on day 3?" → query_type: "activity_query"
-- "Show me budget hotels" → query_type: "hotel_query"
 
-If anything is missing, set it to null. If it's a follow-up, keep the previous trip details from chat history.
+Example 1 - Missing budget:
+User: "I want to travel to New York on November 1st"
+Response:
+{{
+  "origin_city": null,
+  "destination_city": "New York",
+  "start_date": "2025-11-01",
+  "end_date": null,
+  "trip_length_days": null,
+  "budget_usd": null,
+  "interests": null,
+  "query_type": "new_trip",
+  "missing_fields": ["origin_city", "trip_length_days", "budget_usd"],
+  "needs_clarification": true,
+  "clarification_question": "Great! I'd love to help you plan your trip to New York. Where will you be traveling from?"
+}}
+
+Example 2 - Providing missing info:
+Previous context: Asked about origin city
+User: "From Chicago"
+Response:
+{{
+  "origin_city": "Chicago",
+  "destination_city": "New York",
+  "start_date": "2025-11-01",
+  "end_date": null,
+  "trip_length_days": null,
+  "budget_usd": null,
+  "interests": null,
+  "query_type": "providing_details",
+  "missing_fields": ["trip_length_days", "budget_usd"],
+  "needs_clarification": true,
+  "clarification_question": "Perfect! How many days are you planning to stay in New York?"
+}}
+
+Example 3 - Complete information:
+User: "I want to go from Chicago to New York from Nov 1-5, budget $2000"
+Response:
+{{
+  "origin_city": "Chicago",
+  "destination_city": "New York",
+  "start_date": "2025-11-01",
+  "end_date": "2025-11-05",
+  "trip_length_days": 5,
+  "budget_usd": 2000,
+  "interests": null,
+  "query_type": "new_trip",
+  "missing_fields": [],
+  "needs_clarification": false,
+  "clarification_question": null
+}}
+
+Example 4 - Follow-up question:
+User: "Tell me more about hotels"
+Response:
+{{
+  "origin_city": "[keep from history]",
+  "destination_city": "[keep from history]",
+  "start_date": "[keep from history]",
+  "end_date": "[keep from history]",
+  "trip_length_days": "[keep from history]",
+  "budget_usd": "[keep from history]",
+  "interests": null,
+  "query_type": "hotel_query",
+  "missing_fields": [],
+  "needs_clarification": false,
+  "clarification_question": null
+}}
+
+CLARIFICATION QUESTION PRIORITIES (ask in this order):
+1. origin_city: "Where will you be traveling from?"
+2. trip_length_days/end_date: "How many days are you planning to stay?" or "When do you plan to return?"
+3. budget_usd: "What's your total budget for this trip?"
+4. interests (optional): "Are there any specific activities or interests you'd like to focus on?"
+
+Make clarification questions natural, friendly, and conversational.
 """)
 
 extract_chain = RunnableSequence(extract_prompt | llm | StrOutputParser())
