@@ -340,7 +340,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 
 # ============== SIDEBAR (ChatGPT Style) ==============
 
-# with st.sidebar:
+with st.sidebar:
 #     # New Chat Button (like ChatGPT)
 #     st.markdown("### ")
 #     if st.button("➕ New Trip", use_container_width=True):
@@ -400,10 +400,10 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 #         st.success(f"✅ Loaded {count} messages")
 #         st.rerun()
     
-#     if st.button("🗑️ Clear Current Trip", use_container_width=True):
-#         clear_history(st.session_state.session_id)
-#         st.success("✅ Cleared!")
-#         st.rerun()
+    if st.button("Clear Current Trip", use_container_width=True):
+        clear_history(st.session_state.session_id)
+        st.success("✅ Cleared!")
+        st.rerun()
     
 #     # Footer info
 #     st.markdown("---")
