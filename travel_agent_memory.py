@@ -329,14 +329,14 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     with st.spinner("Creating your itinerary..."):
         final_output = summary_chain.invoke({
             "final_state": tool_output["final_state"],
-            "chat_history": formatted_history
+            "chat_history": formatted_history,
+            "user_text": user_text  # ← Add this
         })
 
     st.session_state.chat_history.add_ai_message(final_output)
     save_message_to_sheet(SHEET_NAME, "assistant", final_output, session_id)
 
     return final_output
-
 
 # ============== SIDEBAR (ChatGPT Style) ==============
 
