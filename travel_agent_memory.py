@@ -501,7 +501,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         with st.spinner("Finding best options..."):
             tool_output = simulate_tool_calls(structured_data)
 
-        with st.spinner("Preparing your itinerary..."):
+        with st.spinner("Preparing your plan..."):
             final_output = summary_chain.invoke({
                 "final_state": tool_output["final_state"],
                 "chat_history": formatted_history,
