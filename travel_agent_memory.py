@@ -95,7 +95,6 @@ if "all_sessions" not in st.session_state:
     st.session_state.all_sessions = ["default"]
 
 
-# ============== GUARDRAILS ==============
 
 def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     """
@@ -103,25 +102,23 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     Returns: (is_valid, error_message)
     """
     
-    # Check 1: Input length
     if len(user_input.strip()) < 3:
         return False, "Please provide more details about your travel plans."
     
     if len(user_input) > 1000:
         return False, " Your message is too long. Please keep it under 1000 characters."
     
-    # Check 2: Inappropriate content (basic filters)
-    inappropriate_keywords = [
-        'hack', 'exploit', 'illegal', 'drugs', 'weapons',
-        'violence', 'terrorism', 'steal', 'fraud'
-    ]
+    # inappropriate_keywords = [
+    #     'hack', 'exploit', 'illegal', 'drugs', 'weapons',
+    #     'violence', 'terrorism', 'steal', 'fraud'
+    # ]
     
-    user_input_lower = user_input.lower()
-    for keyword in inappropriate_keywords:
-        if keyword in user_input_lower:
-            return False, " I'm a travel planning assistant. Please ask travel-related questions only."
+    # user_input_lower = user_input.lower()
+    # for keyword in inappropriate_keywords:
+    #     if keyword in user_input_lower:
+    #         return False, " I'm a travel planning assistant. Please ask travel-related questions only."
     
-    # Check 3: Non-travel queries (basic detection)
+    # # Check 3: Non-travel queries (basic detection)
     non_travel_keywords = [
         'recipe', 'code', 'program', 'python', 'javascript', 
         'medicine', 'disease', 'legal advice', 'financial advice',
@@ -169,10 +166,8 @@ def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, st
     has_travel_content = any(indicator in response_lower for indicator in travel_indicators)
     
     if not has_travel_content and len(st.session_state.messages) > 0:
-        # Allow initial greetings, but subsequent messages should be travel-related
         return False, " Let me refocus on your travel plans. Could you tell me more about your trip?"
     
-    # Check 3: Ensure no harmful/inappropriate content in response
     harmful_patterns = [
         'illegal', 'dangerous', 'unsafe', 'scam', 'fraud'
     ]
@@ -230,7 +225,7 @@ def get_available_destinations() -> str:
 
 
 def format_chat_history() -> str:
-    """Format chat history as a readable string"""
+
     messages = st.session_state.chat_history.messages
     if not messages:
         return "No previous conversation."
@@ -246,7 +241,6 @@ def format_chat_history() -> str:
 
 
 def restore_chat_history(session_id: str = "default"):
-    """Restore chat history from Google Sheets into memory"""
     messages = load_chat_history_from_sheet(SHEET_NAME, session_id)
     
     st.session_state.chat_history.clear()
@@ -369,7 +363,7 @@ User's Current Request:
 {user_text}
 
 CRITICAL DATA CONSTRAINT:
-- You can ONLY provide information about flights and hotels that are present in the "tool_results" data
+- You can ONLY provide information about flights and hotels that are present in the {get_available_destinations()} data
 - If tool_results shows empty flight_options or hotel_options, you MUST inform the user that we don't have data for that route/destination
 - DO NOT make up or suggest flights, hotels, prices, or itineraries if the data is not in tool_results
 - DO NOT provide general travel advice about destinations not in our database
