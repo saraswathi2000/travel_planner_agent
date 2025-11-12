@@ -363,7 +363,7 @@ User's Current Request:
 {user_text}
 
 CRITICAL DATA CONSTRAINT:
-- You can ONLY provide information about flights and hotels that are present in the {get_available_destinations()} data
+- You can ONLY provide information about flights and hotels that are present in the {structured_data["tool_results"]} data
 - If tool_results shows empty flight_options or hotel_options, you MUST inform the user that we don't have data for that route/destination
 - DO NOT make up or suggest flights, hotels, prices, or itineraries if the data is not in tool_results
 - DO NOT provide general travel advice about destinations not in our database
