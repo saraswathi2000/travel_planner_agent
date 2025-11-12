@@ -67,7 +67,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize LLM
 @st.cache_resource
 def get_llm():
     return ChatOpenAI(
@@ -96,29 +95,32 @@ if "all_sessions" not in st.session_state:
 
 
 
+
 def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     """
     Check if user input violates guardrails
     Returns: (is_valid, error_message)
     """
     
+    # Check 1: Input length
     if len(user_input.strip()) < 3:
-        return False, "Please provide more details about your travel plans."
+        return False, " Please provide more details about your travel plans."
     
     if len(user_input) > 1000:
         return False, " Your message is too long. Please keep it under 1000 characters."
     
-    # inappropriate_keywords = [
-    #     'hack', 'exploit', 'illegal', 'drugs', 'weapons',
-    #     'violence', 'terrorism', 'steal', 'fraud'
-    # ]
+    # Check 2: Inappropriate content (basic filters)
+    inappropriate_keywords = [
+        'hack', 'exploit', 'illegal', 'drugs', 'weapons',
+        'violence', 'terrorism', 'steal', 'fraud'
+    ]
     
-    # user_input_lower = user_input.lower()
-    # for keyword in inappropriate_keywords:
-    #     if keyword in user_input_lower:
-    #         return False, " I'm a travel planning assistant. Please ask travel-related questions only."
+    user_input_lower = user_input.lower()
+    for keyword in inappropriate_keywords:
+        if keyword in user_input_lower:
+            return False, " I'm a travel planning assistant. Please ask travel-related questions only."
     
-    # # Check 3: Non-travel queries (basic detection)
+    # Check 3: Non-travel queries (basic detection)
     non_travel_keywords = [
         'recipe', 'code', 'program', 'python', 'javascript', 
         'medicine', 'disease', 'legal advice', 'financial advice',
@@ -136,7 +138,7 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
     
     if has_non_travel and not has_travel_context:
-        return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+        return False, " I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
     
     # Check 4: Spam detection (repeated characters/words)
     if re.search(r'(.)\1{10,}', user_input):  # 10+ repeated characters
@@ -166,8 +168,10 @@ def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, st
     has_travel_content = any(indicator in response_lower for indicator in travel_indicators)
     
     if not has_travel_content and len(st.session_state.messages) > 0:
+        # Allow initial greetings, but subsequent messages should be travel-related
         return False, " Let me refocus on your travel plans. Could you tell me more about your trip?"
     
+    # Check 3: Ensure no harmful/inappropriate content in response
     harmful_patterns = [
         'illegal', 'dangerous', 'unsafe', 'scam', 'fraud'
     ]
@@ -203,29 +207,8 @@ def sanitize_input(user_input: str) -> str:
     return user_input.strip()
 
 
-
-
-def get_available_destinations() -> str:
-    """Get list of available destinations from database"""
-    try:
-        flights_df = load_sheet_data(SHEET_NAME, "flights_data")
-        hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
-        
-        # Get unique destinations
-        flight_destinations = set(flights_df['destination'].unique()) if 'destination' in flights_df.columns else set()
-        hotel_destinations = set(hotels_df['city'].unique()) if 'city' in hotels_df.columns else set()
-        
-        all_destinations = flight_destinations.union(hotel_destinations)
-        
-        if all_destinations:
-            return ", ".join(sorted(all_destinations))
-        return "various destinations"
-    except:
-        return "various destinations"
-
-
 def format_chat_history() -> str:
-
+    """Format chat history as a readable string"""
     messages = st.session_state.chat_history.messages
     if not messages:
         return "No previous conversation."
@@ -241,6 +224,7 @@ def format_chat_history() -> str:
 
 
 def restore_chat_history(session_id: str = "default"):
+    """Restore chat history from Google Sheets into memory"""
     messages = load_chat_history_from_sheet(SHEET_NAME, session_id)
     
     st.session_state.chat_history.clear()
@@ -293,6 +277,7 @@ def create_new_session():
     st.session_state.history_loaded = True
     if new_session_id not in st.session_state.all_sessions:
         st.session_state.all_sessions.append(new_session_id)
+
 
 
 
@@ -362,27 +347,13 @@ Structured Data:
 User's Current Request:
 {user_text}
 
-CRITICAL DATA CONSTRAINT:
-- You can ONLY provide information about flights and hotels that are present in the "tool_results" data
-- If tool_results shows empty flight_options or hotel_options, you MUST inform the user that we don't have data for that route/destination
-- DO NOT make up or suggest flights, hotels, prices, or itineraries if the data is not in tool_results
-- DO NOT provide general travel advice about destinations not in our database
-- If no data is available, clearly state: "I don't have flight/hotel information for this route in my database."
-
 RESPONSE INSTRUCTIONS:
-1. **Check tool_results first**: If flight_options or hotel_options are empty, inform user immediately
-2. **Only use provided data**: Never suggest options not in the tool_results
-3. **If data is missing**: Apologize and ask if they'd like to search for a different route/destination that we have data for
-4. **If it's a new trip with data**: Provide itinerary using ONLY the flights and hotels from tool_results
-5. **If it's a follow-up**: Focus on the specific aspect, but only if data exists
-6. **If query_type is "off_topic"**: Politely redirect to travel planning
+1. **Analyze what the user is specifically asking for**
+2. **If it's a new trip**: Provide complete itinerary (flights, hotels, activities, budget)
+3. **If it's a follow-up about specific aspect**: Focus ONLY on that aspect
+4. **If query_type is "off_topic"**: Politely redirect to travel planning
 
-Example responses when NO data available:
-- "I apologize, but I don't have flight information for the route from [origin] to [destination] in my database. Would you like to try a different route?"
-- "Unfortunately, I don't have hotel data for [destination] at the moment. Can I help you with another destination?"
-- "I currently don't have information for this specific travel route. The destinations I can help with are based on available flight and hotel data in my system."
-
-Stay focused, truthful, and only provide information that exists in tool_results.
+Stay focused, relevant, and helpful. Only discuss travel-related topics.
 """)
 
 summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
@@ -397,7 +368,6 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         structured_data = {}
 
-    # Check if query is off-topic
     if structured_data.get("query_type") == "off_topic":
         return {"final_state": json.dumps(structured_data, indent=2)}
 
@@ -419,52 +389,30 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
         except Exception:
             pass
 
-    flights = []
-    hotels = []
-    data_availability = {
-        "flights_available": False,
-        "hotels_available": False,
-        "origin": origin,
-        "destination": destination
-    }
-
     try:
-        # Only search if we have origin and destination
-        if origin and destination:
-            flights_df = load_sheet_data(SHEET_NAME, "flights_data")
-            hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
+        flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+        hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
 
-            flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
-            hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
-            
-            # Track data availability
-            data_availability["flights_available"] = len(flights) > 0
-            data_availability["hotels_available"] = len(hotels) > 0
-            
+        flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
+        hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
     except Exception as e:
-        # Keep flights and hotels as empty lists
-        pass
+        flights = []
+        hotels = []
 
     structured_data["tool_results"] = {
         "flight_options": flights,
-        "hotel_options": hotels,
-        "data_availability": data_availability
+        "hotel_options": hotels
     }
-    
-    # Add explicit message if no data found
-    if not flights and not hotels and origin and destination:
-        structured_data["no_data_message"] = f"No flight or hotel data available for travel from {origin} to {destination}"
-    elif not flights and origin and destination:
-        structured_data["no_flight_data_message"] = f"No flight data available from {origin} to {destination}"
-    elif not hotels and destination:
-        structured_data["no_hotel_data_message"] = f"No hotel data available for {destination}"
 
     return {"final_state": json.dumps(structured_data, indent=2)}
 
 
+
+
 def run_agent(user_text: str, session_id: str = "default") -> str:
     """Main agent workflow with guardrails"""
-
+    
+    # Sanitize input
     user_text = sanitize_input(user_text)
     
     # Check input guardrails
@@ -474,7 +422,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     
     # Rate limiting (max 50 messages per session)
     if len(st.session_state.messages) >= 100:
-        return " You've reached the maximum number of messages for this session. Please start a new trip."
+        return "You've reached the maximum number of messages for this session. Please start a new trip."
     
     st.session_state.chat_history.add_user_message(user_text)
     save_message_to_sheet(SHEET_NAME, "user", user_text, session_id)
@@ -488,7 +436,7 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
                 "chat_history": formatted_history
             })
 
-        with st.spinner(" Finding best options..."):
+        with st.spinner("Finding best options..."):
             tool_output = simulate_tool_calls(structured_data)
 
         with st.spinner(" Preparing your plan..."):
@@ -515,11 +463,14 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         return error_response
 
 
+
+
 with st.sidebar:
     if st.button(" Clear Current Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
         st.success(" Cleared!")
         st.rerun()
+
 
 
 
@@ -558,14 +509,6 @@ if prompt := st.chat_input("Where would you like to go? "):
         error_msg = " Something went wrong. Please try again."
         st.error(error_msg)
         st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-
-
-
-
-
-
-
 
 
 
