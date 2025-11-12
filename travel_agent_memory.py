@@ -105,7 +105,7 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     
     # Check 1: Input length
     if len(user_input.strip()) < 3:
-        return False, " Please provide more details about your travel plans."
+        return False, "Please provide more details about your travel plans."
     
     if len(user_input) > 1000:
         return False, " Your message is too long. Please keep it under 1000 characters."
@@ -139,7 +139,7 @@ def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
     
     if has_non_travel and not has_travel_context:
-        return False, " I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+        return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
     
     # Check 4: Spam detection (repeated characters/words)
     if re.search(r'(.)\1{10,}', user_input):  # 10+ repeated characters
@@ -188,9 +188,9 @@ def validate_budget(budget_str: str) -> tuple[bool, str]:
     try:
         budget = float(budget_str)
         if budget < 100:
-            return False, "Budget seems too low for a realistic trip. Please provide a budget of at least $100."
+            return False, " Budget seems too low for a realistic trip. Please provide a budget of at least $100."
         if budget > 1000000:
-            return False, "Budget seems unrealistically high. Please provide a more reasonable budget."
+            return False, " Budget seems unrealistically high. Please provide a more reasonable budget."
         return True, ""
     except:
         return True, ""  # Let LLM handle parsing
@@ -301,7 +301,6 @@ def create_new_session():
         st.session_state.all_sessions.append(new_session_id)
 
 
-# ============== LLM CHAINS WITH GUARDRAILS ==============
 
 # System guardrail prompt
 system_guardrail = """
@@ -458,7 +457,7 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
         "data_availability": data_availability
     }
     
-  
+    # Add explicit message if no data found
     if not flights and not hotels and origin and destination:
         structured_data["no_data_message"] = f"No flight or hotel data available for travel from {origin} to {destination}"
     elif not flights and origin and destination:
@@ -469,12 +468,9 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     return {"final_state": json.dumps(structured_data, indent=2)}
 
 
-#Main agent workflow with guardrails
-
 def run_agent(user_text: str, session_id: str = "default") -> str:
-    
-    
-    # Sanitize input
+    """Main agent workflow with guardrails"""
+
     user_text = sanitize_input(user_text)
     
     # Check input guardrails
@@ -498,10 +494,10 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
                 "chat_history": formatted_history
             })
 
-        with st.spinner("Finding best options..."):
+        with st.spinner(" Finding best options..."):
             tool_output = simulate_tool_calls(structured_data)
 
-        with st.spinner("Preparing your plan..."):
+        with st.spinner(" Preparing your plan..."):
             final_output = summary_chain.invoke({
                 "final_state": tool_output["final_state"],
                 "chat_history": formatted_history,
@@ -519,22 +515,19 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         return final_output
         
     except Exception as e:
-        error_response = "I encountered an error processing your request. Please try rephrasing your question."
+        error_response = " I encountered an error processing your request. Please try rephrasing your question."
         st.session_state.chat_history.add_ai_message(error_response)
         save_message_to_sheet(SHEET_NAME, "assistant", error_response, session_id)
         return error_response
 
 
-
-
 with st.sidebar:
-    if st.button("Clear Current Trip", use_container_width=True):
+    if st.button(" Clear Current Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
         st.success(" Cleared!")
         st.rerun()
 
 
-# ============== MAIN CONTENT ==============
 
 st.title(" Travel Planner")
 # st.caption("Plan your perfect trip with AI assistance")
@@ -550,15 +543,15 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-
+# Chat input with guardrails
 if prompt := st.chat_input("Where would you like to go? "):
-    
+    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    
+    # Get bot response with guardrails
     try:
         response = run_agent(prompt, st.session_state.session_id)
         
@@ -568,11 +561,9 @@ if prompt := st.chat_input("Where would you like to go? "):
         st.session_state.messages.append({"role": "assistant", "content": response})
         
     except Exception as e:
-        error_msg = "Something went wrong. Please try again."
+        error_msg = " Something went wrong. Please try again."
         st.error(error_msg)
         st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-
 
 
 
