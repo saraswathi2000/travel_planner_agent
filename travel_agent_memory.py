@@ -94,7 +94,7 @@ if "history_loaded" not in st.session_state:
 if "all_sessions" not in st.session_state:
     st.session_state.all_sessions = ["default"]
 
-
+# ============== GUARDRAILS ==============
 
 def check_input_guardrails(user_input: str) -> tuple[bool, str]:
     if len(user_input.strip()) < 3:
@@ -187,7 +187,7 @@ def clear_history(session_id: str = "default"):
     clear_sheet_history(SHEET_NAME, session_id)
 
 
-
+# ============== LLM CHAINS ==============
 
 system_guardrail = """
 CRITICAL: You are ONLY a travel planning assistant.
@@ -244,7 +244,7 @@ Response: "Available flights: ANA for $800..."
 
 Example WRONG:
 Data shows flight_options: [{{airline:"ANA", price:800}}]
-Response: "I don't have flight data"  NEVER DO THIS!
+Response: "I don't have flight data" ❌ NEVER DO THIS!
 """)
 
 summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
@@ -318,16 +318,16 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     formatted_history = format_chat_history()
 
     try:
-        with st.spinner(" Analyzing..."):
+        with st.spinner("🔍 Analyzing..."):
             structured_data = extract_chain.invoke({
                 "user_text": user_text,
                 "chat_history": formatted_history
             })
 
-        with st.spinner(" Searching..."):
+        with st.spinner("✈️ Searching..."):
             tool_output = simulate_tool_calls(structured_data)
 
-        with st.spinner(" Creating plan..."):
+        with st.spinner("📝 Creating itinerary..."):
             final_output = summary_chain.invoke({
                 "final_state": tool_output["final_state"],
                 "chat_history": formatted_history,
@@ -351,36 +351,76 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         return error_response
 
 
-
+# ============== UI ==============
 
 with st.sidebar:
     st.markdown("---")
     
-    if st.button(" Show Available Data", use_container_width=True):
+    if st.button("🔍 Show Available Data", use_container_width=True):
         try:
+            st.write("**Loading flights_data...**")
             flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+            
+            st.write(f"**Flights Data: {len(flights_df)} rows**")
+            st.write(f"Columns: {flights_df.columns.tolist()}")
+            
+            if len(flights_df) > 0:
+                st.write("**Sample Flights:**")
+                st.dataframe(flights_df.head(5))
+                
+                if 'origin' in flights_df.columns and 'destination' in flights_df.columns:
+                    st.write("**Flight Routes:**")
+                    routes = flights_df[['origin', 'destination']].drop_duplicates()
+                    for _, row in routes.iterrows():
+                        st.caption(f"✈️ {row['origin']} → {row['destination']}")
+            else:
+                st.error("⚠️ Flights sheet is EMPTY!")
+            
+            st.write("---")
+            st.write("**Loading hotels_data...**")
             hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
             
-            st.write("**Flight Routes:**")
-            if 'origin' in flights_df.columns and 'destination' in flights_df.columns:
-                routes = flights_df[['origin', 'destination']].drop_duplicates()
-                for _, row in routes.iterrows():
-                    st.caption(f"✈️ {row['origin']} → {row['destination']}")
+            st.write(f"**Hotels Data: {len(hotels_df)} rows**")
+            st.write(f"Columns: {hotels_df.columns.tolist()}")
             
-            st.write("**Hotel Cities:**")
-            if 'city' in hotels_df.columns:
-                cities = hotels_df['city'].unique()
-                for city in cities:
-                    st.caption(f" {city}")
+            if len(hotels_df) > 0:
+                st.write("**Sample Hotels:**")
+                st.dataframe(hotels_df.head(5))
+                
+                if 'city' in hotels_df.columns:
+                    st.write("**Hotel Cities:**")
+                    cities = hotels_df['city'].unique()
+                    for city in cities:
+                        st.caption(f"🏨 {city}")
+            else:
+                st.error("⚠️ Hotels sheet is EMPTY!")
+                
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+            st.write("**Possible issues:**")
+            st.write("- Sheet name is wrong (should be 'AI_Agent_data')")
+            st.write("- Worksheet names are wrong (should be 'flights_data' and 'hotels_data')")
+            st.write("- Permissions issue with Google Sheets API")
+    
+    if st.button("🧪 Test Search", use_container_width=True):
+        st.write("**Testing flight search...**")
+        try:
+            flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+            results = find_flights(flights_df, "New York", "Osaka")
+            st.write(f"Found {len(results)} flights")
+            if results:
+                st.json(results)
+            else:
+                st.warning("No flights found!")
         except Exception as e:
             st.error(f"Error: {e}")
     
-    if st.button("Clear Trip", use_container_width=True):
+    if st.button("🗑️ Clear Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
-        st.success("Cleared!")
+        st.success("✅ Cleared!")
         st.rerun()
 
-st.title("Travel Planner")
+st.title("✈️ Travel Planner")
 
 if not st.session_state.history_loaded:
     with st.spinner("Loading..."):
@@ -406,12 +446,9 @@ if prompt := st.chat_input("Where would you like to go?"):
         st.session_state.messages.append({"role": "assistant", "content": response})
         
     except Exception as e:
-        error_msg = f" Error: {str(e)}"
+        error_msg = f"⚠️ Error: {str(e)}"
         st.error(error_msg)
         st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-
-
 
 
 
