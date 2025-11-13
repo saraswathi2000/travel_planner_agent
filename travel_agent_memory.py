@@ -378,11 +378,9 @@ def safe_parse_json(possible_json):
         print(f"⚠️ JSON decode failed: {e}")
         print(f"🔹 Cleaned string was: {cleaned[:200]}")
         return {}
-
 def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     """Simulate tool calls to fetch flight and hotel data"""
     try:
-        # structured_data = json.loads(structured_json_str)
         structured_data = safe_parse_json(structured_json_str)
     except json.JSONDecodeError:
         structured_data = {}
@@ -418,12 +416,65 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
         flights = []
         hotels = []
 
+    # Check if flight and hotel options are empty and add appropriate messages
+    if not flights and not hotels:
+        structured_data["availability_message"] = "Unfortunately, no flight or hotel options are available for your search criteria at this time. Please try adjusting your destination, dates, or budget."
+    elif not flights:
+        structured_data["availability_message"] = "No flight options are available for your search criteria at this time. Please try adjusting your origin, destination, dates, or budget."
+    elif not hotels:
+        structured_data["availability_message"] = "No hotel options are available for your search criteria at this time. Please try adjusting your destination or budget."
+
     structured_data["tool_results"] = {
         "flight_options": flights,
         "hotel_options": hotels
     }
 
     return {"final_state": json.dumps(structured_data, indent=2)}
+# def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
+#     """Simulate tool calls to fetch flight and hotel data"""
+#     try:
+#         # structured_data = json.loads(structured_json_str)
+#         structured_data = safe_parse_json(structured_json_str)
+#     except json.JSONDecodeError:
+#         structured_data = {}
+
+#     if structured_data.get("query_type") == "off_topic":
+#         return {"final_state": json.dumps(structured_data, indent=2)}
+
+#     origin = structured_data.get("origin_city") or ""
+#     destination = structured_data.get("destination_city") or ""
+#     start_date = structured_data.get("start_date")
+#     budget = structured_data.get("budget_usd")
+#     nights = structured_data.get("trip_length_days") or 3
+#     budget_per_night = None
+
+#     if budget:
+#         try:
+#             budget = float(budget)
+#             # Budget validation
+#             if budget < 100 or budget > 1000000:
+#                 structured_data["budget_warning"] = "Budget seems unusual. Please verify."
+#             else:
+#                 budget_per_night = (budget * 0.4) / nights
+#         except Exception:
+#             pass
+
+#     try:
+#         flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+#         hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
+
+#         flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
+#         hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
+#     except Exception as e:
+#         flights = []
+#         hotels = []
+
+#     structured_data["tool_results"] = {
+#         "flight_options": flights,
+#         "hotel_options": hotels
+#     }
+
+#     return {"final_state": json.dumps(structured_data, indent=2)}
 
 
 
