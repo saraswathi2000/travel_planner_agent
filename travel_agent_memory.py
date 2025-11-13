@@ -95,120 +95,57 @@ if "all_sessions" not in st.session_state:
 
 
 
-
 def check_input_guardrails(user_input: str) -> tuple[bool, str]:
-    """
-    Check if user input violates guardrails
-    Returns: (is_valid, error_message)
-    """
-    
-    # Check 1: Input length
     if len(user_input.strip()) < 3:
-        return False, " Please provide more details about your travel plans."
+        return False, "Please provide more details about your travel plans."
     
     if len(user_input) > 1000:
-        return False, " Your message is too long. Please keep it under 1000 characters."
+        return False, "Your message is too long. Please keep it under 1000 characters."
     
-    # Check 2: Inappropriate content (basic filters)
-    inappropriate_keywords = [
-        'hack', 'exploit', 'illegal', 'drugs', 'weapons',
-        'violence', 'terrorism', 'steal', 'fraud'
-    ]
-    
+    inappropriate_keywords = ['hack', 'exploit', 'illegal', 'drugs', 'weapons', 'violence', 'terrorism', 'steal', 'fraud']
     user_input_lower = user_input.lower()
+    
     for keyword in inappropriate_keywords:
         if keyword in user_input_lower:
-            return False, " I'm a travel planning assistant. Please ask travel-related questions only."
+            return False, "I'm a travel planning assistant. Please ask travel-related questions only."
     
-    # Check 3: Non-travel queries (basic detection)
-    non_travel_keywords = [
-        'recipe', 'code', 'program', 'python', 'javascript', 
-        'medicine', 'disease', 'legal advice', 'financial advice',
-        'homework', 'essay', 'write me'
-    ]
-    
-    # Only flag if it's clearly not travel-related
-    travel_keywords = [
-        'trip', 'travel', 'flight', 'hotel', 'vacation', 'visit',
-        'tour', 'destination', 'booking', 'budget', 'itinerary',
-        'airport', 'plan', 'go to', 'want to', 'going to'
-    ]
+    non_travel_keywords = ['recipe', 'code', 'program', 'python', 'javascript', 'medicine', 'disease', 'legal advice', 'financial advice', 'homework', 'essay', 'write me']
+    travel_keywords = ['trip', 'travel', 'flight', 'hotel', 'vacation', 'visit', 'tour', 'destination', 'booking', 'budget', 'itinerary', 'airport', 'plan', 'go to', 'want to', 'going to']
     
     has_travel_context = any(keyword in user_input_lower for keyword in travel_keywords)
     has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
     
     if has_non_travel and not has_travel_context:
-        return False, " I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+        return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
     
-    # Check 4: Spam detection (repeated characters/words)
-    if re.search(r'(.)\1{10,}', user_input):  # 10+ repeated characters
-        return False, " Please provide a valid travel query."
+    if re.search(r'(.)\1{10,}', user_input):
+        return False, "Please provide a valid travel query."
     
     return True, ""
 
 
 def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, str]:
-    """
-    Check if AI response is appropriate and travel-related
-    Returns: (is_valid, error_message)
-    """
-    
-    # Check 1: Response length
     if len(ai_response.strip()) < 50:
-        return False, " Response too short. Let me provide more details."
+        return False, "Response too short. Let me provide more details."
     
-    # Check 2: Check if response is actually about travel
-    travel_indicators = [
-        'flight', 'hotel', 'destination', 'trip', 'travel',
-        'itinerary', 'budget', 'vacation', 'visit', 'tour',
-        'day', 'activities', 'airport', 'accommodation'
-    ]
-    
+    travel_indicators = ['flight', 'hotel', 'destination', 'trip', 'travel', 'itinerary', 'budget', 'vacation', 'visit', 'tour', 'day', 'activities', 'airport', 'accommodation']
     response_lower = ai_response.lower()
     has_travel_content = any(indicator in response_lower for indicator in travel_indicators)
     
     if not has_travel_content and len(st.session_state.messages) > 0:
-        # Allow initial greetings, but subsequent messages should be travel-related
-        return False, " Let me refocus on your travel plans. Could you tell me more about your trip?"
-    
-    # Check 3: Ensure no harmful/inappropriate content in response
-    harmful_patterns = [
-        'illegal', 'dangerous', 'unsafe', 'scam', 'fraud'
-    ]
-    
-    if any(pattern in response_lower for pattern in harmful_patterns):
-        return False, " I apologize, but I can only provide safe and legal travel advice."
+        return False, "Let me refocus on your travel plans. Could you tell me more about your trip?"
     
     return True, ""
 
 
-def validate_budget(budget_str: str) -> tuple[bool, str]:
-    """Validate budget input"""
-    try:
-        budget = float(budget_str)
-        if budget < 100:
-            return False, " Budget seems too low for a realistic trip. Please provide a budget of at least $100."
-        if budget > 1000000:
-            return False, " Budget seems unrealistically high. Please provide a more reasonable budget."
-        return True, ""
-    except:
-        return True, ""  # Let LLM handle parsing
-
-
 def sanitize_input(user_input: str) -> str:
-    """Sanitize user input"""
-    # Remove excessive whitespace
     user_input = ' '.join(user_input.split())
-    
-    # Remove any potential code injection attempts
     user_input = user_input.replace('<script>', '').replace('</script>', '')
     user_input = user_input.replace('<?php', '').replace('?>', '')
-    
     return user_input.strip()
 
 
 def format_chat_history() -> str:
-    """Format chat history as a readable string"""
     messages = st.session_state.chat_history.messages
     if not messages:
         return "No previous conversation."
@@ -224,7 +161,6 @@ def format_chat_history() -> str:
 
 
 def restore_chat_history(session_id: str = "default"):
-    """Restore chat history from Google Sheets into memory"""
     messages = load_chat_history_from_sheet(SHEET_NAME, session_id)
     
     st.session_state.chat_history.clear()
@@ -245,124 +181,75 @@ def restore_chat_history(session_id: str = "default"):
 
 
 def clear_history(session_id: str = "default"):
-    """Clear chat history from both memory and Google Sheets"""
     st.session_state.chat_history.clear()
     st.session_state.messages = []
     clear_sheet_history(SHEET_NAME, session_id)
 
 
-def load_all_sessions():
-    """Load all available sessions"""
-    sessions = get_all_sessions(SHEET_NAME)
-    if not sessions:
-        sessions = ["default"]
-    st.session_state.all_sessions = sessions
-    return sessions
 
 
-def switch_session(session_id: str):
-    """Switch to a different session"""
-    st.session_state.session_id = session_id
-    st.session_state.history_loaded = False
-    restore_chat_history(session_id)
-
-
-def create_new_session():
-    """Create a new session"""
-    import time
-    new_session_id = f"trip_{int(time.time())}"
-    st.session_state.session_id = new_session_id
-    st.session_state.chat_history.clear()
-    st.session_state.messages = []
-    st.session_state.history_loaded = True
-    if new_session_id not in st.session_state.all_sessions:
-        st.session_state.all_sessions.append(new_session_id)
-
-
-
-
-# System guardrail prompt
 system_guardrail = """
-CRITICAL SYSTEM INSTRUCTIONS - YOU MUST FOLLOW THESE:
-
-1. YOU ARE ONLY A TRAVEL PLANNING ASSISTANT
-   - Only answer questions about travel, trips, destinations, flights, hotels, activities
-   - Politely decline any non-travel questions
-   - Do not provide information on: coding, medicine, legal advice, financial advice, homework, etc.
-
-2. SAFETY AND ETHICS
-   - Never suggest illegal activities
-   - Always prioritize traveler safety
-   - Do not provide information about dangerous locations without warnings
-   - Do not help with fraudulent activities
-
-3. STAY IN SCOPE
-   - Focus on: destinations, flights, hotels, itineraries, budgets, activities
-   - Redirect off-topic questions back to travel planning
-
-4. BE HELPFUL BUT CAUTIOUS
-   - Provide realistic travel advice
-   - Acknowledge limitations (e.g., "I can't book flights, but I can help you find options")
-   - Don't make up information about flights, hotels, or prices not in the data
-
-If user asks non-travel questions, respond with:
-"I'm specialized in travel planning. I can help you with trip planning, destinations, flights, hotels, and activities. How can I assist with your travel plans?"
+CRITICAL: You are ONLY a travel planning assistant.
+- Only discuss travel topics
+- Redirect non-travel questions politely
 """
 
 extract_prompt = ChatPromptTemplate.from_template(system_guardrail + """
 
-You are an assistant that extracts structured travel details from a user's request.
+Extract structured travel details from the user's request.
 
-Conversation so far:
+Conversation:
 {chat_history}
 
 User Request:
 {user_text}
 
-IMPORTANT INSTRUCTIONS:
-1. If this is a NEW trip request, extract all available details
-2. If this is a FOLLOW-UP question about an existing trip, preserve previous trip details
-3. If user asks NON-TRAVEL questions, set query_type to "off_topic"
+Return valid JSON with: origin_city, destination_city, start_date, end_date, trip_length_days, budget_usd, interests, query_type
 
-Return a valid JSON with keys:
-origin_city, destination_city, start_date, end_date, trip_length_days, budget_usd, interests, query_type, needs_clarification, clarification_question, missing_fields
-
-query_type options: "new_trip", "providing_details", "hotel_query", "flight_query", "activity_query", "budget_query", "general_query", "modification", "off_topic"
-
-If query_type is "off_topic", leave all other fields null.
+query_type: "new_trip", "hotel_query", "flight_query", "activity_query", "modification", "off_topic"
 """)
 
 extract_chain = RunnableSequence(extract_prompt | llm | StrOutputParser())
 
 summary_prompt = ChatPromptTemplate.from_template(system_guardrail + """
 
-You are a helpful travel planner. Use the chat history and structured data below to provide a contextual response.
+You are a travel planner. CRITICAL DATA RULES:
+
+1. CHECK flight_options and hotel_options arrays in tool_results
+2. If arrays contain data (length > 0): DATA EXISTS - create itinerary using ONLY that data
+3. If arrays are empty: NO DATA - tell user we don't have information
+4. NEVER say "no data" if arrays have items
+5. Use ONLY flights from flight_options and hotels from hotel_options
+6. Include ALL details: prices, names, times from the data
 
 Chat History:
 {chat_history}
 
-Structured Data:
+Data:
 {final_state}
 
-User's Current Request:
+User Request:
 {user_text}
 
-RESPONSE INSTRUCTIONS:
-1. **Analyze what the user is specifically asking for**
-2. **If it's a new trip**: Provide complete itinerary (flights, hotels, activities, budget)
-3. **If it's a follow-up about specific aspect**: Focus ONLY on that aspect
-4. **If query_type is "off_topic"**: Politely redirect to travel planning
+FORMAT:
+- If flight_options has items: List all flights with details
+- If hotel_options has items: List all hotels with details
+- If both empty AND user asked for trip: "I don't have flight/hotel data for this route"
+- If follow-up question: Answer ONLY that specific aspect
 
-Stay focused, relevant, and helpful. Only discuss travel-related topics.
+Example CORRECT:
+Data shows flight_options: [{{airline:"ANA", price:800}}]
+Response: "Available flights: ANA for $800..."
+
+Example WRONG:
+Data shows flight_options: [{{airline:"ANA", price:800}}]
+Response: "I don't have flight data"  NEVER DO THIS!
 """)
 
 summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
 
 
-
-
 def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
-    """Simulate tool calls to fetch flight and hotel data"""
     try:
         structured_data = json.loads(structured_json_str)
     except json.JSONDecodeError:
@@ -381,48 +268,48 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     if budget:
         try:
             budget = float(budget)
-            # Budget validation
             if budget < 100 or budget > 1000000:
-                structured_data["budget_warning"] = "Budget seems unusual. Please verify."
+                structured_data["budget_warning"] = "Budget seems unusual."
             else:
                 budget_per_night = (budget * 0.4) / nights
         except Exception:
             pass
 
+    flights = []
+    hotels = []
+    
     try:
         flights_df = load_sheet_data(SHEET_NAME, "flights_data")
         hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
 
         flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
         hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
+        
+        st.write(f"DEBUG: Found {len(flights)} flights and {len(hotels)} hotels")
+        
     except Exception as e:
-        flights = []
-        hotels = []
+        st.error(f"Error loading data: {e}")
 
     structured_data["tool_results"] = {
         "flight_options": flights,
-        "hotel_options": hotels
+        "hotel_options": hotels,
+        "flights_count": len(flights),
+        "hotels_count": len(hotels),
+        "has_data": len(flights) > 0 or len(hotels) > 0
     }
 
     return {"final_state": json.dumps(structured_data, indent=2)}
 
 
-
-
 def run_agent(user_text: str, session_id: str = "default") -> str:
-    """Main agent workflow with guardrails"""
-    
-    # Sanitize input
     user_text = sanitize_input(user_text)
     
-    # Check input guardrails
     is_valid, error_msg = check_input_guardrails(user_text)
     if not is_valid:
         return error_msg
     
-    # Rate limiting (max 50 messages per session)
     if len(st.session_state.messages) >= 100:
-        return "You've reached the maximum number of messages for this session. Please start a new trip."
+        return "You've reached the maximum messages. Please start a new trip."
     
     st.session_state.chat_history.add_user_message(user_text)
     save_message_to_sheet(SHEET_NAME, "user", user_text, session_id)
@@ -430,23 +317,22 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
     formatted_history = format_chat_history()
 
     try:
-        with st.spinner(" Analyzing your request..."):
+        with st.spinner(" Analyzing..."):
             structured_data = extract_chain.invoke({
                 "user_text": user_text,
                 "chat_history": formatted_history
             })
 
-        with st.spinner("Finding best options..."):
+        with st.spinner(" Searching..."):
             tool_output = simulate_tool_calls(structured_data)
 
-        with st.spinner(" Preparing your plan..."):
+        with st.spinner(" Creating plan..."):
             final_output = summary_chain.invoke({
                 "final_state": tool_output["final_state"],
                 "chat_history": formatted_history,
                 "user_text": user_text
             })
         
-        # Check output guardrails
         is_valid, error_msg = check_output_guardrails(final_output, user_text)
         if not is_valid:
             final_output = "I'm here to help with your travel planning. What destination are you interested in?"
@@ -457,7 +343,8 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
         return final_output
         
     except Exception as e:
-        error_response = " I encountered an error processing your request. Please try rephrasing your question."
+        st.error(f"Debug error: {e}")
+        error_response = "I encountered an error. Please try rephrasing your question."
         st.session_state.chat_history.add_ai_message(error_response)
         save_message_to_sheet(SHEET_NAME, "assistant", error_response, session_id)
         return error_response
@@ -466,37 +353,49 @@ def run_agent(user_text: str, session_id: str = "default") -> str:
 
 
 with st.sidebar:
-    if st.button(" Clear Current Trip", use_container_width=True):
+    st.markdown("---")
+    
+    if st.button(" Show Available Data", use_container_width=True):
+        try:
+            flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+            hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
+            
+            st.write("**Flight Routes:**")
+            if 'origin' in flights_df.columns and 'destination' in flights_df.columns:
+                routes = flights_df[['origin', 'destination']].drop_duplicates()
+                for _, row in routes.iterrows():
+                    st.caption(f"✈️ {row['origin']} → {row['destination']}")
+            
+            st.write("**Hotel Cities:**")
+            if 'city' in hotels_df.columns:
+                cities = hotels_df['city'].unique()
+                for city in cities:
+                    st.caption(f" {city}")
+        except Exception as e:
+            st.error(f"Error: {e}")
+    
+    if st.button("Clear Trip", use_container_width=True):
         clear_history(st.session_state.session_id)
-        st.success(" Cleared!")
+        st.success("Cleared!")
         st.rerun()
 
+st.title("Travel Planner")
 
-
-
-st.title(" Travel Planner")
-# st.caption("Plan your perfect trip with AI assistance")
-
-# Load history on first run
 if not st.session_state.history_loaded:
-    with st.spinner("Loading conversation..."):
+    with st.spinner("Loading..."):
         count = restore_chat_history(st.session_state.session_id)
     st.session_state.history_loaded = True
 
-# Display chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input with guardrails
-if prompt := st.chat_input("Where would you like to go? "):
-    # Display user message
+if prompt := st.chat_input("Where would you like to go?"):
     with st.chat_message("user"):
         st.markdown(prompt)
     
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Get bot response with guardrails
     try:
         response = run_agent(prompt, st.session_state.session_id)
         
@@ -506,11 +405,9 @@ if prompt := st.chat_input("Where would you like to go? "):
         st.session_state.messages.append({"role": "assistant", "content": response})
         
     except Exception as e:
-        error_msg = " Something went wrong. Please try again."
+        error_msg = f" Error: {str(e)}"
         st.error(error_msg)
         st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-
 
 
 
