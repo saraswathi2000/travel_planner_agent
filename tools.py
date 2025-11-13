@@ -1,12 +1,10 @@
-
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 from typing import Dict, List, Any
 from datetime import datetime
-import pytz
 import streamlit as st
-import os
+import pytz
 
 # Setting up Google Sheets
 SCOPES = [
@@ -20,7 +18,7 @@ try:
         st.secrets["gcp_service_account"],
         scopes=SCOPES
     )
-    print("✅ Loaded credentials from Streamlit secrets")
+    print("Loaded credentials from Streamlit secrets")
 except Exception as e:
     print(f"❌ Error loading credentials: {e}")
     print("Make sure 'gcp_service_account' is configured in Streamlit secrets!")
@@ -52,48 +50,14 @@ def find_flights(
     max_results: int = 3
 ) -> List[Dict[str, Any]]:
     """Find flights matching the criteria"""
-    # Clean and strip input
-    origin = str(origin).strip() if origin else ""
-    destination = str(destination).strip() if destination else ""
-    
-    print(f"DEBUG find_flights: Looking for '{origin}' -> '{destination}'")
-    print(f"DEBUG find_flights: DataFrame shape: {df.shape}")
-    print(f"DEBUG find_flights: Columns: {df.columns.tolist()}")
-    
-    if not origin or not destination:
-        print("DEBUG find_flights: Empty origin or destination")
-        return []
-    
-    # Check if required columns exist
-    if 'origin' not in df.columns or 'destination' not in df.columns:
-        print(f"DEBUG find_flights: Missing required columns. Available: {df.columns.tolist()}")
-        return []
-    
-    # Print sample data
-    if len(df) > 0:
-        print(f"DEBUG find_flights: Sample origins: {df['origin'].head(3).tolist()}")
-        print(f"DEBUG find_flights: Sample destinations: {df['destination'].head(3).tolist()}")
-    
-    # Filter by origin and destination with case-insensitive search
     q = df[
-        (df['origin'].astype(str).str.strip().str.contains(origin, case=False, na=False, regex=False)) & 
-        (df['destination'].astype(str).str.strip().str.contains(destination, case=False, na=False, regex=False))
+        (df['origin'].str.contains(origin, case=False, na=False)) & 
+        (df['destination'].str.contains(destination, case=False, na=False))
     ]
-    
-    print(f"DEBUG find_flights: Found {len(q)} flights after filtering")
-    
     if budget_usd:
-        if 'price_in_dollars' in df.columns:
-            q = q[q['price_in_dollars'] <= float(budget_usd)]
-            print(f"DEBUG find_flights: {len(q)} flights within budget")
-    
-    if 'price_in_dollars' in df.columns and len(q) > 0:
-        q = q.sort_values('price_in_dollars')
-    
-    results = q.head(max_results).to_dict(orient='records')
-    print(f"DEBUG find_flights: Returning {len(results)} results")
-    
-    return results
+        q = q[q['price_in_dollars'] <= float(budget_usd)]
+    q = q.sort_values('price_in_dollars')
+    return q.head(max_results).to_dict(orient='records')
 
 
 def find_hotels(
@@ -103,46 +67,14 @@ def find_hotels(
     max_results: int = 3
 ) -> List[Dict[str, Any]]:
     """Find hotels matching the criteria"""
-    # Clean and strip input
-    city = str(city).strip() if city else ""
-    
-    print(f"DEBUG find_hotels: Looking for city '{city}'")
-    print(f"DEBUG find_hotels: DataFrame shape: {df.shape}")
-    print(f"DEBUG find_hotels: Columns: {df.columns.tolist()}")
-    
-    if not city:
-        print("DEBUG find_hotels: Empty city")
-        return []
-    
-    # Check if required column exists
-    if 'city' not in df.columns:
-        print(f"DEBUG find_hotels: Missing 'city' column. Available: {df.columns.tolist()}")
-        return []
-    
-    # Print sample data
-    if len(df) > 0:
-        print(f"DEBUG find_hotels: Sample cities: {df['city'].head(5).tolist()}")
-    
-    # Filter by city with case-insensitive search
-    q = df[df['city'].astype(str).str.strip().str.contains(city, case=False, na=False, regex=False)]
-    
-    print(f"DEBUG find_hotels: Found {len(q)} hotels after filtering")
-    
+    q = df[df['city'].str.contains(city, case=False, na=False)]
     if budget_per_night:
-        if 'price_per_night_in_dollars' in df.columns:
-            q = q[q['price_per_night_in_dollars'] <= float(budget_per_night)]
-            print(f"DEBUG find_hotels: {len(q)} hotels within budget")
-    
-    if 'price_per_night_in_dollars' in df.columns and len(q) > 0:
-        q = q.sort_values('price_per_night_in_dollars')
-    
-    results = q.head(max_results).to_dict(orient='records')
-    print(f"DEBUG find_hotels: Returning {len(results)} results")
-    
-    return results
+        q = q[q['price_per_night_in_dollars'] <= float(budget_per_night)]
+    q = q.sort_values('price_per_night_in_dollars')
+    return q.head(max_results).to_dict(orient='records')
 
 
-
+# ============== CHAT HISTORY MANAGEMENT ==============
 
 def save_message_to_sheet(
     sheet_name: str,
@@ -151,7 +83,7 @@ def save_message_to_sheet(
     session_id: str = "default"
 ) -> bool:
     """
-    Save a single message to Google Sheets with Indian Standard Time
+    Save a single message to Google Sheets
     
     Args:
         sheet_name: Name of the Google Sheet
@@ -176,14 +108,14 @@ def save_message_to_sheet(
             )
             # Add headers
             worksheet.append_row([
-                "Timestamp (IST)",
+                "Timestamp",
                 "Session ID",
                 "Role",
                 "Content",
                 "Message ID"
             ])
         
-        # Get Indian Standard Time
+        # Append new message
         ist = pytz.timezone('Asia/Kolkata')
         timestamp = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
         message_id = f"{session_id}_{timestamp.replace(' ', '_').replace(':', '-')}"
@@ -199,7 +131,7 @@ def save_message_to_sheet(
         return True
         
     except Exception as e:
-        print(f" Error saving to Google Sheets: {e}")
+        print(f"⚠️ Error saving to Google Sheets: {e}")
         return False
 
 
@@ -275,6 +207,7 @@ def clear_sheet_history(
         for row_num in reversed(rows_to_delete):
             worksheet.delete_rows(row_num)
         
+        print(f"✅ Cleared {len(rows_to_delete)} messages from Google Sheets")
         return True
         
     except Exception as e:
@@ -283,7 +216,15 @@ def clear_sheet_history(
 
 
 def get_all_sessions(sheet_name: str) -> List[str]:
-
+    """
+    Get list of all unique session IDs from the chat history
+    
+    Args:
+        sheet_name: Name of the Google Sheet
+    
+    Returns:
+        List of unique session IDs
+    """
     try:
         spreadsheet = gc.open(sheet_name)
         
@@ -302,5 +243,5 @@ def get_all_sessions(sheet_name: str) -> List[str]:
         return sessions
         
     except Exception as e:
-        print(f"⚠️ Error getting sessions: {e}")
+        print(f" Error getting sessions: {e}")
         return []
