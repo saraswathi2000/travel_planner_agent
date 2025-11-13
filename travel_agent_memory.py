@@ -417,7 +417,7 @@ def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
         hotels = []
 
     # Check if flight and hotel options are empty and add appropriate messages
-    if not flights and not hotels:
+    if not flights or not hotels:
         structured_data["availability_message"] = "Unfortunately, no flight or hotel options are available for your search criteria at this time. Please try adjusting your destination, dates, or budget."
     elif not flights:
         structured_data["availability_message"] = "No flight options are available for your search criteria at this time. Please try adjusting your origin, destination, dates, or budget."
