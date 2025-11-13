@@ -1,4 +1,3 @@
-
 import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
@@ -14,17 +13,17 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Check if running on Streamlit Cloud or locally
-if "gcp_service_account" in st.secrets:
-    # Running on Streamlit Cloud - use secrets
+# Use Streamlit secrets for credentials
+try:
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=SCOPES
     )
-else:
-    # Running locally - use JSON file
-    SERVICE_ACCOUNT_FILE = r"C:\Users\saras\Desktop\AIAgent\candidate-database-421805-c2e928dc9e6e.json"
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    print("✅ Loaded credentials from Streamlit secrets")
+except Exception as e:
+    print(f"❌ Error loading credentials: {e}")
+    print("Make sure 'gcp_service_account' is configured in Streamlit secrets!")
+    raise
 
 gc = gspread.authorize(creds)
 
@@ -36,11 +35,44 @@ CHAT_HISTORY_TAB = "chat_history"
 
 def load_sheet_data(sheet_name: str, worksheet_name: str) -> pd.DataFrame:
     """Load data from a Google Sheet worksheet into a pandas DataFrame"""
-    sh = gc.open(sheet_name)
-    ws = sh.worksheet(worksheet_name)
-    data = ws.get_all_records()
-    df = pd.DataFrame(data)
-    return df
+    print(f"\n{'='*60}")
+    print(f"📂 LOADING SHEET DATA")
+    print(f"  Sheet: '{sheet_name}'")
+    print(f"  Worksheet: '{worksheet_name}'")
+    
+    try:
+        sh = gc.open(sheet_name)
+        print(f"  ✅ Opened spreadsheet: {sh.title}")
+        
+        # List all worksheets
+        all_worksheets = [ws.title for ws in sh.worksheets()]
+        print(f"  📋 Available worksheets: {all_worksheets}")
+        
+        ws = sh.worksheet(worksheet_name)
+        print(f"  ✅ Found worksheet: {ws.title}")
+        
+        data = ws.get_all_records()
+        print(f"  📊 Loaded {len(data)} rows")
+        
+        df = pd.DataFrame(data)
+        print(f"  📊 DataFrame shape: {df.shape}")
+        print(f"  📊 Columns: {df.columns.tolist()}")
+        
+        # Show first few rows
+        if len(df) > 0:
+            print(f"\n  📄 First 3 rows:")
+            for idx, row in df.head(3).iterrows():
+                print(f"    Row {idx}: {dict(row)}")
+        else:
+            print(f"  ⚠️ WARNING: DataFrame is EMPTY!")
+        
+        print(f"{'='*60}\n")
+        return df
+        
+    except Exception as e:
+        print(f"  ❌ ERROR loading sheet: {e}")
+        print(f"{'='*60}\n")
+        raise
 
 
 def find_flights(
@@ -337,7 +369,6 @@ def get_all_sessions(sheet_name: str) -> List[str]:
     except Exception as e:
         print(f"⚠️ Error getting sessions: {e}")
         return []
-
 
 
 
