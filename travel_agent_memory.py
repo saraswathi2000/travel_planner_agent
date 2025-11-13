@@ -1,413 +1,758 @@
+import gspread
+import pandas as pd
+from google.oauth2.service_account import Credentials
+from typing import Dict, List, Any
+from datetime import datetime
+import pytz
 import streamlit as st
 import os
-import json
-from typing import Dict, Any
-import re
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableSequence
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_community.chat_message_histories import ChatMessageHistory
+# Setting up Google Sheets
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
-from tools import (
-    load_sheet_data, 
-    find_flights, 
-    find_hotels,
-    save_message_to_sheet,
-    load_chat_history_from_sheet,
-    clear_sheet_history,
-    get_all_sessions
-)
-
-# Configuration
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-SHEET_NAME = "AI_Agent_data"
-
-# Page configuration
-st.set_page_config(
-    page_title="Travel Planner Agent",
-    page_icon="✈️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS
-st.markdown("""
-<style>
-    [data-testid="stSidebar"] {
-        background-color: #202123;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-        color: #ececf1;
-    }
-    
-    .stButton button {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid rgba(255,255,255,0.1);
-        background-color: transparent;
-        color: white;
-        padding: 10px;
-        transition: all 0.2s;
-    }
-    
-    .stButton button:hover {
-        background-color: rgba(255,255,255,0.1);
-    }
-    
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    .stChatInput {
-        border-radius: 12px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-@st.cache_resource
-def get_llm():
-    return ChatOpenAI(
-        openai_api_key=OPENAI_API_KEY,
-        model="gpt-4o-mini",
-        temperature=0.3
+# Check if running on Streamlit Cloud or locally
+if "gcp_service_account" in st.secrets:
+    # Running on Streamlit Cloud - use secrets
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES
     )
+else:
+    # Running locally - use JSON file
+    SERVICE_ACCOUNT_FILE = r"C:\Users\saras\Desktop\AIAgent\candidate-database-421805-c2e928dc9e6e.json"
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
-llm = get_llm()
+gc = gspread.authorize(creds)
 
-# Initialize session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = ChatMessageHistory()
-
-if "session_id" not in st.session_state:
-    st.session_state.session_id = "default"
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "history_loaded" not in st.session_state:
-    st.session_state.history_loaded = False
-
-if "all_sessions" not in st.session_state:
-    st.session_state.all_sessions = ["default"]
+# Constants
+CHAT_HISTORY_TAB = "chat_history"
 
 
+# ============== DATA LOADING FUNCTIONS ==============
 
-def check_input_guardrails(user_input: str) -> tuple[bool, str]:
-    if len(user_input.strip()) < 3:
-        return False, "Please provide more details about your travel plans."
+def load_sheet_data(sheet_name: str, worksheet_name: str) -> pd.DataFrame:
+    """Load data from a Google Sheet worksheet into a pandas DataFrame"""
+    sh = gc.open(sheet_name)
+    ws = sh.worksheet(worksheet_name)
+    data = ws.get_all_records()
+    df = pd.DataFrame(data)
+    return df
+
+
+def find_flights(
+    df: pd.DataFrame, 
+    origin: str, 
+    destination: str, 
+    prefer_date: str = None, 
+    budget_usd: float = None, 
+    max_results: int = 3
+) -> List[Dict[str, Any]]:
+    """Find flights matching the criteria"""
+    # Clean and strip input
+    origin = str(origin).strip() if origin else ""
+    destination = str(destination).strip() if destination else ""
     
-    if len(user_input) > 1000:
-        return False, "Your message is too long. Please keep it under 1000 characters."
+    print(f"\n{'='*60}")
+    print(f"SEARCH REQUEST:")
+    print(f"  Origin: '{origin}'")
+    print(f"  Destination: '{destination}'")
+    print(f"  Budget: {budget_usd}")
+    print(f"{'='*60}")
     
-    inappropriate_keywords = ['hack', 'exploit', 'illegal', 'drugs', 'weapons', 'violence', 'terrorism', 'steal', 'fraud']
-    user_input_lower = user_input.lower()
+    if not origin or not destination:
+        print("❌ Empty origin or destination")
+        return []
     
-    for keyword in inappropriate_keywords:
-        if keyword in user_input_lower:
-            return False, "I'm a travel planning assistant. Please ask travel-related questions only."
+    # Check DataFrame
+    print(f"DataFrame info:")
+    print(f"  Total rows: {len(df)}")
+    print(f"  Columns: {df.columns.tolist()}")
     
-    non_travel_keywords = ['recipe', 'code', 'program', 'python', 'javascript', 'medicine', 'disease', 'legal advice', 'financial advice', 'homework', 'essay', 'write me']
-    travel_keywords = ['trip', 'travel', 'flight', 'hotel', 'vacation', 'visit', 'tour', 'destination', 'booking', 'budget', 'itinerary', 'airport', 'plan', 'go to', 'want to', 'going to']
+    if 'origin' not in df.columns or 'destination' not in df.columns:
+        print(f"❌ Missing columns! Available: {df.columns.tolist()}")
+        return []
     
-    has_travel_context = any(keyword in user_input_lower for keyword in travel_keywords)
-    has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
+    # Show ALL data in the sheet
+    print(f"\n📊 ALL DATA IN FLIGHTS SHEET:")
+    for idx, row in df.head(10).iterrows():
+        print(f"  Row {idx}: '{row.get('origin', 'N/A')}' → '{row.get('destination', 'N/A')}' (${row.get('price_in_dollars', 'N/A')})")
     
-    if has_non_travel and not has_travel_context:
-        return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+    # Try exact matching first
+    print(f"\n🔍 Searching with case-insensitive contains...")
     
-    if re.search(r'(.)\1{10,}', user_input):
-        return False, "Please provide a valid travel query."
+    # Check each condition separately
+    origin_matches = df['origin'].astype(str).str.strip().str.lower().str.contains(origin.lower(), na=False, regex=False)
+    dest_matches = df['destination'].astype(str).str.strip().str.lower().str.contains(destination.lower(), na=False, regex=False)
     
-    return True, ""
-
-
-def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, str]:
-    if len(ai_response.strip()) < 50:
-        return False, "Response too short. Let me provide more details."
+    print(f"  Origins matching '{origin}': {origin_matches.sum()}")
+    print(f"  Destinations matching '{destination}': {dest_matches.sum()}")
     
-    travel_indicators = ['flight', 'hotel', 'destination', 'trip', 'travel', 'itinerary', 'budget', 'vacation', 'visit', 'tour', 'day', 'activities', 'airport', 'accommodation']
-    response_lower = ai_response.lower()
-    has_travel_content = any(indicator in response_lower for indicator in travel_indicators)
+    # Combined filter
+    q = df[origin_matches & dest_matches]
     
-    if not has_travel_content and len(st.session_state.messages) > 0:
-        return False, "Let me refocus on your travel plans. Could you tell me more about your trip?"
+    print(f"  ✅ Combined matches: {len(q)}")
     
-    return True, ""
-
-
-def sanitize_input(user_input: str) -> str:
-    user_input = ' '.join(user_input.split())
-    user_input = user_input.replace('<script>', '').replace('</script>', '')
-    user_input = user_input.replace('<?php', '').replace('?>', '')
-    return user_input.strip()
-
-
-def format_chat_history() -> str:
-    messages = st.session_state.chat_history.messages
-    if not messages:
-        return "No previous conversation."
-
-    formatted = []
-    for msg in messages:
-        if isinstance(msg, HumanMessage):
-            formatted.append(f"User: {msg.content}")
-        elif isinstance(msg, AIMessage):
-            formatted.append(f"Assistant: {msg.content}")
-
-    return "\n".join(formatted)
-
-
-def restore_chat_history(session_id: str = "default"):
-    messages = load_chat_history_from_sheet(SHEET_NAME, session_id)
+    if len(q) > 0:
+        print(f"\n✅ FOUND {len(q)} FLIGHTS:")
+        for idx, row in q.iterrows():
+            print(f"  - {row.get('airline', 'N/A')}: {row.get('origin', 'N/A')} → {row.get('destination', 'N/A')} (${row.get('price_in_dollars', 'N/A')})")
+    else:
+        print(f"\n❌ NO MATCHES FOUND")
+        print(f"Tried searching:")
+        print(f"  - Origin contains: '{origin}' (case-insensitive)")
+        print(f"  - Destination contains: '{destination}' (case-insensitive)")
     
-    st.session_state.chat_history.clear()
-    st.session_state.messages = []
+    if budget_usd and 'price_in_dollars' in df.columns and len(q) > 0:
+        before_budget = len(q)
+        q = q[q['price_in_dollars'] <= float(budget_usd)]
+        print(f"  After budget filter: {len(q)} (removed {before_budget - len(q)})")
     
-    for msg in messages:
-        role = msg.get("Role", "")
-        content = msg.get("Content", "")
-        
-        if role == "user":
-            st.session_state.chat_history.add_user_message(content)
-            st.session_state.messages.append({"role": "user", "content": content})
-        elif role == "assistant":
-            st.session_state.chat_history.add_ai_message(content)
-            st.session_state.messages.append({"role": "assistant", "content": content})
+    if 'price_in_dollars' in df.columns and len(q) > 0:
+        q = q.sort_values('price_in_dollars')
     
-    return len(messages)
+    results = q.head(max_results).to_dict(orient='records')
+    print(f"\n📤 Returning {len(results)} results")
+    print(f"{'='*60}\n")
+    
+    return results
 
 
-def clear_history(session_id: str = "default"):
-    st.session_state.chat_history.clear()
-    st.session_state.messages = []
-    clear_sheet_history(SHEET_NAME, session_id)
+def find_hotels(
+    df: pd.DataFrame, 
+    city: str, 
+    budget_per_night: float = None, 
+    max_results: int = 3
+) -> List[Dict[str, Any]]:
+    """Find hotels matching the criteria"""
+    # Clean and strip input
+    city = str(city).strip() if city else ""
+    
+    print(f"DEBUG find_hotels: Looking for city '{city}'")
+    print(f"DEBUG find_hotels: DataFrame shape: {df.shape}")
+    print(f"DEBUG find_hotels: Columns: {df.columns.tolist()}")
+    
+    if not city:
+        print("DEBUG find_hotels: Empty city")
+        return []
+    
+    # Check if required column exists
+    if 'city' not in df.columns:
+        print(f"DEBUG find_hotels: Missing 'city' column. Available: {df.columns.tolist()}")
+        return []
+    
+    # Print sample data
+    if len(df) > 0:
+        print(f"DEBUG find_hotels: Sample cities: {df['city'].head(5).tolist()}")
+    
+    # Filter by city with case-insensitive search
+    q = df[df['city'].astype(str).str.strip().str.contains(city, case=False, na=False, regex=False)]
+    
+    print(f"DEBUG find_hotels: Found {len(q)} hotels after filtering")
+    
+    if budget_per_night:
+        if 'price_per_night_in_dollars' in df.columns:
+            q = q[q['price_per_night_in_dollars'] <= float(budget_per_night)]
+            print(f"DEBUG find_hotels: {len(q)} hotels within budget")
+    
+    if 'price_per_night_in_dollars' in df.columns and len(q) > 0:
+        q = q.sort_values('price_per_night_in_dollars')
+    
+    results = q.head(max_results).to_dict(orient='records')
+    print(f"DEBUG find_hotels: Returning {len(results)} results")
+    
+    return results
 
 
+# ============== CHAT HISTORY MANAGEMENT ==============
 
-
-system_guardrail = """
-CRITICAL: You are ONLY a travel planning assistant.
-- Only discuss travel topics
-- Redirect non-travel questions politely
-"""
-
-extract_prompt = ChatPromptTemplate.from_template(system_guardrail + """
-
-Extract structured travel details from the user's request.
-
-Conversation:
-{chat_history}
-
-User Request:
-{user_text}
-
-Return valid JSON with: origin_city, destination_city, start_date, end_date, trip_length_days, budget_usd, interests, query_type
-
-query_type: "new_trip", "hotel_query", "flight_query", "activity_query", "modification", "off_topic"
-""")
-
-extract_chain = RunnableSequence(extract_prompt | llm | StrOutputParser())
-
-summary_prompt = ChatPromptTemplate.from_template(system_guardrail + """
-
-You are a travel planner. CRITICAL DATA RULES:
-
-1. CHECK flight_options and hotel_options arrays in tool_results
-2. If arrays contain data (length > 0): DATA EXISTS - create itinerary using ONLY that data
-3. If arrays are empty: NO DATA - tell user we don't have information
-4. NEVER say "no data" if arrays have items
-5. Use ONLY flights from flight_options and hotels from hotel_options
-6. Include ALL details: prices, names, times from the data
-
-Chat History:
-{chat_history}
-
-Data:
-{final_state}
-
-User Request:
-{user_text}
-
-FORMAT:
-- If flight_options has items: List all flights with details
-- If hotel_options has items: List all hotels with details
-- If both empty AND user asked for trip: "I don't have flight/hotel data for this route"
-- If follow-up question: Answer ONLY that specific aspect
-
-Example CORRECT:
-Data shows flight_options: [{{airline:"ANA", price:800}}]
-Response: "Available flights: ANA for $800..."
-
-Example WRONG:
-Data shows flight_options: [{{airline:"ANA", price:800}}]
-Response: "I don't have flight data"  NEVER DO THIS!
-""")
-
-summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
-
-
-def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
+def save_message_to_sheet(
+    sheet_name: str,
+    role: str, 
+    content: str, 
+    session_id: str = "default"
+) -> bool:
+    """
+    Save a single message to Google Sheets with Indian Standard Time
+    
+    Args:
+        sheet_name: Name of the Google Sheet
+        role: Either 'user' or 'assistant'
+        content: The message content
+        session_id: Identifier for the conversation session
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
-        structured_data = json.loads(structured_json_str)
-    except json.JSONDecodeError:
-        structured_data = {}
-
-    if structured_data.get("query_type") == "off_topic":
-        return {"final_state": json.dumps(structured_data, indent=2)}
-
-    origin = structured_data.get("origin_city") or ""
-    destination = structured_data.get("destination_city") or ""
-    start_date = structured_data.get("start_date")
-    budget = structured_data.get("budget_usd")
-    nights = structured_data.get("trip_length_days") or 3
-    budget_per_night = None
-
-    if budget:
+        spreadsheet = gc.open(sheet_name)
+        
+        # Try to get existing worksheet, create if doesn't exist
         try:
-            budget = float(budget)
-            if budget < 100 or budget > 1000000:
-                structured_data["budget_warning"] = "Budget seems unusual."
-            else:
-                budget_per_night = (budget * 0.4) / nights
-        except Exception:
-            pass
-
-    flights = []
-    hotels = []
-    
-    try:
-        flights_df = load_sheet_data(SHEET_NAME, "flights_data")
-        hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
-
-        flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
-        hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
+            worksheet = spreadsheet.worksheet(CHAT_HISTORY_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(
+                title=CHAT_HISTORY_TAB,
+                rows=1000,
+                cols=5
+            )
+            # Add headers
+            worksheet.append_row([
+                "Timestamp (IST)",
+                "Session ID",
+                "Role",
+                "Content",
+                "Message ID"
+            ])
         
-        st.write(f"DEBUG: Found {len(flights)} flights and {len(hotels)} hotels")
+        # Get Indian Standard Time
+        ist = pytz.timezone('Asia/Kolkata')
+        timestamp = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
+        message_id = f"{session_id}_{timestamp.replace(' ', '_').replace(':', '-')}"
         
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-
-    structured_data["tool_results"] = {
-        "flight_options": flights,
-        "hotel_options": hotels,
-        "flights_count": len(flights),
-        "hotels_count": len(hotels),
-        "has_data": len(flights) > 0 or len(hotels) > 0
-    }
-
-    return {"final_state": json.dumps(structured_data, indent=2)}
-
-
-def run_agent(user_text: str, session_id: str = "default") -> str:
-    user_text = sanitize_input(user_text)
-    
-    is_valid, error_msg = check_input_guardrails(user_text)
-    if not is_valid:
-        return error_msg
-    
-    if len(st.session_state.messages) >= 100:
-        return "You've reached the maximum messages. Please start a new trip."
-    
-    st.session_state.chat_history.add_user_message(user_text)
-    save_message_to_sheet(SHEET_NAME, "user", user_text, session_id)
-
-    formatted_history = format_chat_history()
-
-    try:
-        with st.spinner(" Analyzing..."):
-            structured_data = extract_chain.invoke({
-                "user_text": user_text,
-                "chat_history": formatted_history
-            })
-
-        with st.spinner(" Searching..."):
-            tool_output = simulate_tool_calls(structured_data)
-
-        with st.spinner(" Creating plan..."):
-            final_output = summary_chain.invoke({
-                "final_state": tool_output["final_state"],
-                "chat_history": formatted_history,
-                "user_text": user_text
-            })
+        worksheet.append_row([
+            timestamp,
+            session_id,
+            role,
+            content,
+            message_id
+        ])
         
-        is_valid, error_msg = check_output_guardrails(final_output, user_text)
-        if not is_valid:
-            final_output = "I'm here to help with your travel planning. What destination are you interested in?"
-
-        st.session_state.chat_history.add_ai_message(final_output)
-        save_message_to_sheet(SHEET_NAME, "assistant", final_output, session_id)
-
-        return final_output
+        return True
         
     except Exception as e:
-        st.error(f"Debug error: {e}")
-        error_response = "I encountered an error. Please try rephrasing your question."
-        st.session_state.chat_history.add_ai_message(error_response)
-        save_message_to_sheet(SHEET_NAME, "assistant", error_response, session_id)
-        return error_response
+        print(f"⚠️ Error saving to Google Sheets: {e}")
+        return False
 
 
-
-
-with st.sidebar:
-    st.markdown("---")
+def load_chat_history_from_sheet(
+    sheet_name: str,
+    session_id: str = "default"
+) -> List[Dict[str, str]]:
+    """
+    Load chat history from Google Sheets for a specific session
     
-    if st.button(" Show Available Data", use_container_width=True):
+    Args:
+        sheet_name: Name of the Google Sheet
+        session_id: Identifier for the conversation session
+    
+    Returns:
+        List of message dictionaries with 'Role' and 'Content' keys
+    """
+    try:
+        spreadsheet = gc.open(sheet_name)
+        
         try:
-            flights_df = load_sheet_data(SHEET_NAME, "flights_data")
-            hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
-            
-            st.write("**Flight Routes:**")
-            if 'origin' in flights_df.columns and 'destination' in flights_df.columns:
-                routes = flights_df[['origin', 'destination']].drop_duplicates()
-                for _, row in routes.iterrows():
-                    st.caption(f"✈️ {row['origin']} → {row['destination']}")
-            
-            st.write("**Hotel Cities:**")
-            if 'city' in hotels_df.columns:
-                cities = hotels_df['city'].unique()
-                for city in cities:
-                    st.caption(f" {city}")
-        except Exception as e:
-            st.error(f"Error: {e}")
-    
-    if st.button("Clear Trip", use_container_width=True):
-        clear_history(st.session_state.session_id)
-        st.success("Cleared!")
-        st.rerun()
-
-st.title("Travel Planner")
-
-if not st.session_state.history_loaded:
-    with st.spinner("Loading..."):
-        count = restore_chat_history(st.session_state.session_id)
-    st.session_state.history_loaded = True
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Where would you like to go?"):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    try:
-        response = run_agent(prompt, st.session_state.session_id)
+            worksheet = spreadsheet.worksheet(CHAT_HISTORY_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
         
-        with st.chat_message("assistant"):
-            st.markdown(response)
+        # Get all records
+        records = worksheet.get_all_records()
         
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        # Filter by session_id and sort by timestamp
+        session_messages = [
+            msg for msg in records 
+            if msg.get("Session ID") == session_id
+        ]
+        
+        # Sort by timestamp
+        session_messages.sort(key=lambda x: x.get("Timestamp", ""))
+        
+        return session_messages
         
     except Exception as e:
-        error_msg = f" Error: {str(e)}"
-        st.error(error_msg)
-        st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        print(f"⚠️ Error loading from Google Sheets: {e}")
+        return []
+
+
+def clear_sheet_history(
+    sheet_name: str,
+    session_id: str = "default"
+) -> bool:
+    """
+    Clear chat history from Google Sheets for a specific session
+    
+    Args:
+        sheet_name: Name of the Google Sheet
+        session_id: Identifier for the conversation session
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        spreadsheet = gc.open(sheet_name)
+        worksheet = spreadsheet.worksheet(CHAT_HISTORY_TAB)
+        
+        # Get all records
+        records = worksheet.get_all_records()
+        
+        # Find rows to delete (in reverse order to maintain indices)
+        rows_to_delete = []
+        for i, record in enumerate(records, start=2):  # start=2 because row 1 is header
+            if record.get("Session ID") == session_id:
+                rows_to_delete.append(i)
+        
+        # Delete rows in reverse order
+        for row_num in reversed(rows_to_delete):
+            worksheet.delete_rows(row_num)
+        
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Error clearing Google Sheets: {e}")
+        return False
+
+
+def get_all_sessions(sheet_name: str) -> List[str]:
+    """
+    Get list of all unique session IDs from the chat history
+    
+    Args:
+        sheet_name: Name of the Google Sheet
+    
+    Returns:
+        List of unique session IDs
+    """
+    try:
+        spreadsheet = gc.open(sheet_name)
+        
+        try:
+            worksheet = spreadsheet.worksheet(CHAT_HISTORY_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
+        
+        # Get all records
+        records = worksheet.get_all_records()
+        
+        # Extract unique session IDs
+        sessions = list(set(msg.get("Session ID") for msg in records))
+        sessions.sort()
+        
+        return sessions
+        
+    except Exception as e:
+        print(f"⚠️ Error getting sessions: {e}")
+        return []
+
+
+
+
+
+
+
+# import streamlit as st
+# import os
+# import json
+# from typing import Dict, Any
+# import re
+
+# from langchain_openai import ChatOpenAI
+# from langchain_core.prompts import ChatPromptTemplate
+# from langchain_core.output_parsers import StrOutputParser
+# from langchain_core.runnables import RunnableSequence
+# from langchain_core.messages import HumanMessage, AIMessage
+# from langchain_community.chat_message_histories import ChatMessageHistory
+
+# from tools import (
+#     load_sheet_data, 
+#     find_flights, 
+#     find_hotels,
+#     save_message_to_sheet,
+#     load_chat_history_from_sheet,
+#     clear_sheet_history,
+#     get_all_sessions
+# )
+
+# # Configuration
+# OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+# SHEET_NAME = "AI_Agent_data"
+
+# # Page configuration
+# st.set_page_config(
+#     page_title="Travel Planner Agent",
+#     page_icon="✈️",
+#     layout="wide",
+#     initial_sidebar_state="expanded"
+# )
+
+# # Custom CSS
+# st.markdown("""
+# <style>
+#     [data-testid="stSidebar"] {
+#         background-color: #202123;
+#     }
+    
+#     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+#         color: #ececf1;
+#     }
+    
+#     .stButton button {
+#         width: 100%;
+#         border-radius: 8px;
+#         border: 1px solid rgba(255,255,255,0.1);
+#         background-color: transparent;
+#         color: white;
+#         padding: 10px;
+#         transition: all 0.2s;
+#     }
+    
+#     .stButton button:hover {
+#         background-color: rgba(255,255,255,0.1);
+#     }
+    
+#     #MainMenu {visibility: hidden;}
+#     footer {visibility: hidden;}
+    
+#     .stChatInput {
+#         border-radius: 12px;
+#     }
+# </style>
+# """, unsafe_allow_html=True)
+
+# @st.cache_resource
+# def get_llm():
+#     return ChatOpenAI(
+#         openai_api_key=OPENAI_API_KEY,
+#         model="gpt-4o-mini",
+#         temperature=0.3
+#     )
+
+# llm = get_llm()
+
+# # Initialize session state
+# if "chat_history" not in st.session_state:
+#     st.session_state.chat_history = ChatMessageHistory()
+
+# if "session_id" not in st.session_state:
+#     st.session_state.session_id = "default"
+
+# if "messages" not in st.session_state:
+#     st.session_state.messages = []
+
+# if "history_loaded" not in st.session_state:
+#     st.session_state.history_loaded = False
+
+# if "all_sessions" not in st.session_state:
+#     st.session_state.all_sessions = ["default"]
+
+
+
+# def check_input_guardrails(user_input: str) -> tuple[bool, str]:
+#     if len(user_input.strip()) < 3:
+#         return False, "Please provide more details about your travel plans."
+    
+#     if len(user_input) > 1000:
+#         return False, "Your message is too long. Please keep it under 1000 characters."
+    
+#     inappropriate_keywords = ['hack', 'exploit', 'illegal', 'drugs', 'weapons', 'violence', 'terrorism', 'steal', 'fraud']
+#     user_input_lower = user_input.lower()
+    
+#     for keyword in inappropriate_keywords:
+#         if keyword in user_input_lower:
+#             return False, "I'm a travel planning assistant. Please ask travel-related questions only."
+    
+#     non_travel_keywords = ['recipe', 'code', 'program', 'python', 'javascript', 'medicine', 'disease', 'legal advice', 'financial advice', 'homework', 'essay', 'write me']
+#     travel_keywords = ['trip', 'travel', 'flight', 'hotel', 'vacation', 'visit', 'tour', 'destination', 'booking', 'budget', 'itinerary', 'airport', 'plan', 'go to', 'want to', 'going to']
+    
+#     has_travel_context = any(keyword in user_input_lower for keyword in travel_keywords)
+#     has_non_travel = any(keyword in user_input_lower for keyword in non_travel_keywords)
+    
+#     if has_non_travel and not has_travel_context:
+#         return False, "I'm specialized in travel planning. Please ask me about trips, destinations, flights, hotels, or travel activities."
+    
+#     if re.search(r'(.)\1{10,}', user_input):
+#         return False, "Please provide a valid travel query."
+    
+#     return True, ""
+
+
+# def check_output_guardrails(ai_response: str, user_input: str) -> tuple[bool, str]:
+#     if len(ai_response.strip()) < 50:
+#         return False, "Response too short. Let me provide more details."
+    
+#     travel_indicators = ['flight', 'hotel', 'destination', 'trip', 'travel', 'itinerary', 'budget', 'vacation', 'visit', 'tour', 'day', 'activities', 'airport', 'accommodation']
+#     response_lower = ai_response.lower()
+#     has_travel_content = any(indicator in response_lower for indicator in travel_indicators)
+    
+#     if not has_travel_content and len(st.session_state.messages) > 0:
+#         return False, "Let me refocus on your travel plans. Could you tell me more about your trip?"
+    
+#     return True, ""
+
+
+# def sanitize_input(user_input: str) -> str:
+#     user_input = ' '.join(user_input.split())
+#     user_input = user_input.replace('<script>', '').replace('</script>', '')
+#     user_input = user_input.replace('<?php', '').replace('?>', '')
+#     return user_input.strip()
+
+
+# def format_chat_history() -> str:
+#     messages = st.session_state.chat_history.messages
+#     if not messages:
+#         return "No previous conversation."
+
+#     formatted = []
+#     for msg in messages:
+#         if isinstance(msg, HumanMessage):
+#             formatted.append(f"User: {msg.content}")
+#         elif isinstance(msg, AIMessage):
+#             formatted.append(f"Assistant: {msg.content}")
+
+#     return "\n".join(formatted)
+
+
+# def restore_chat_history(session_id: str = "default"):
+#     messages = load_chat_history_from_sheet(SHEET_NAME, session_id)
+    
+#     st.session_state.chat_history.clear()
+#     st.session_state.messages = []
+    
+#     for msg in messages:
+#         role = msg.get("Role", "")
+#         content = msg.get("Content", "")
+        
+#         if role == "user":
+#             st.session_state.chat_history.add_user_message(content)
+#             st.session_state.messages.append({"role": "user", "content": content})
+#         elif role == "assistant":
+#             st.session_state.chat_history.add_ai_message(content)
+#             st.session_state.messages.append({"role": "assistant", "content": content})
+    
+#     return len(messages)
+
+
+# def clear_history(session_id: str = "default"):
+#     st.session_state.chat_history.clear()
+#     st.session_state.messages = []
+#     clear_sheet_history(SHEET_NAME, session_id)
+
+
+
+
+# system_guardrail = """
+# CRITICAL: You are ONLY a travel planning assistant.
+# - Only discuss travel topics
+# - Redirect non-travel questions politely
+# """
+
+# extract_prompt = ChatPromptTemplate.from_template(system_guardrail + """
+
+# Extract structured travel details from the user's request.
+
+# Conversation:
+# {chat_history}
+
+# User Request:
+# {user_text}
+
+# Return valid JSON with: origin_city, destination_city, start_date, end_date, trip_length_days, budget_usd, interests, query_type
+
+# query_type: "new_trip", "hotel_query", "flight_query", "activity_query", "modification", "off_topic"
+# """)
+
+# extract_chain = RunnableSequence(extract_prompt | llm | StrOutputParser())
+
+# summary_prompt = ChatPromptTemplate.from_template(system_guardrail + """
+
+# You are a travel planner. CRITICAL DATA RULES:
+
+# 1. CHECK flight_options and hotel_options arrays in tool_results
+# 2. If arrays contain data (length > 0): DATA EXISTS - create itinerary using ONLY that data
+# 3. If arrays are empty: NO DATA - tell user we don't have information
+# 4. NEVER say "no data" if arrays have items
+# 5. Use ONLY flights from flight_options and hotels from hotel_options
+# 6. Include ALL details: prices, names, times from the data
+
+# Chat History:
+# {chat_history}
+
+# Data:
+# {final_state}
+
+# User Request:
+# {user_text}
+
+# FORMAT:
+# - If flight_options has items: List all flights with details
+# - If hotel_options has items: List all hotels with details
+# - If both empty AND user asked for trip: "I don't have flight/hotel data for this route"
+# - If follow-up question: Answer ONLY that specific aspect
+
+# Example CORRECT:
+# Data shows flight_options: [{{airline:"ANA", price:800}}]
+# Response: "Available flights: ANA for $800..."
+
+# Example WRONG:
+# Data shows flight_options: [{{airline:"ANA", price:800}}]
+# Response: "I don't have flight data"  NEVER DO THIS!
+# """)
+
+# summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
+
+
+# def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
+#     try:
+#         structured_data = json.loads(structured_json_str)
+#     except json.JSONDecodeError:
+#         structured_data = {}
+
+#     if structured_data.get("query_type") == "off_topic":
+#         return {"final_state": json.dumps(structured_data, indent=2)}
+
+#     origin = structured_data.get("origin_city") or ""
+#     destination = structured_data.get("destination_city") or ""
+#     start_date = structured_data.get("start_date")
+#     budget = structured_data.get("budget_usd")
+#     nights = structured_data.get("trip_length_days") or 3
+#     budget_per_night = None
+
+#     if budget:
+#         try:
+#             budget = float(budget)
+#             if budget < 100 or budget > 1000000:
+#                 structured_data["budget_warning"] = "Budget seems unusual."
+#             else:
+#                 budget_per_night = (budget * 0.4) / nights
+#         except Exception:
+#             pass
+
+#     flights = []
+#     hotels = []
+    
+#     try:
+#         flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+#         hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
+
+#         flights = find_flights(flights_df, origin, destination, prefer_date=start_date, budget_usd=budget)
+#         hotels = find_hotels(hotels_df, destination, budget_per_night=budget_per_night)
+        
+#         st.write(f"DEBUG: Found {len(flights)} flights and {len(hotels)} hotels")
+        
+#     except Exception as e:
+#         st.error(f"Error loading data: {e}")
+
+#     structured_data["tool_results"] = {
+#         "flight_options": flights,
+#         "hotel_options": hotels,
+#         "flights_count": len(flights),
+#         "hotels_count": len(hotels),
+#         "has_data": len(flights) > 0 or len(hotels) > 0
+#     }
+
+#     return {"final_state": json.dumps(structured_data, indent=2)}
+
+
+# def run_agent(user_text: str, session_id: str = "default") -> str:
+#     user_text = sanitize_input(user_text)
+    
+#     is_valid, error_msg = check_input_guardrails(user_text)
+#     if not is_valid:
+#         return error_msg
+    
+#     if len(st.session_state.messages) >= 100:
+#         return "You've reached the maximum messages. Please start a new trip."
+    
+#     st.session_state.chat_history.add_user_message(user_text)
+#     save_message_to_sheet(SHEET_NAME, "user", user_text, session_id)
+
+#     formatted_history = format_chat_history()
+
+#     try:
+#         with st.spinner(" Analyzing..."):
+#             structured_data = extract_chain.invoke({
+#                 "user_text": user_text,
+#                 "chat_history": formatted_history
+#             })
+
+#         with st.spinner(" Searching..."):
+#             tool_output = simulate_tool_calls(structured_data)
+
+#         with st.spinner(" Creating plan..."):
+#             final_output = summary_chain.invoke({
+#                 "final_state": tool_output["final_state"],
+#                 "chat_history": formatted_history,
+#                 "user_text": user_text
+#             })
+        
+#         is_valid, error_msg = check_output_guardrails(final_output, user_text)
+#         if not is_valid:
+#             final_output = "I'm here to help with your travel planning. What destination are you interested in?"
+
+#         st.session_state.chat_history.add_ai_message(final_output)
+#         save_message_to_sheet(SHEET_NAME, "assistant", final_output, session_id)
+
+#         return final_output
+        
+#     except Exception as e:
+#         st.error(f"Debug error: {e}")
+#         error_response = "I encountered an error. Please try rephrasing your question."
+#         st.session_state.chat_history.add_ai_message(error_response)
+#         save_message_to_sheet(SHEET_NAME, "assistant", error_response, session_id)
+#         return error_response
+
+
+
+
+# with st.sidebar:
+#     st.markdown("---")
+    
+#     if st.button(" Show Available Data", use_container_width=True):
+#         try:
+#             flights_df = load_sheet_data(SHEET_NAME, "flights_data")
+#             hotels_df = load_sheet_data(SHEET_NAME, "hotels_data")
+            
+#             st.write("**Flight Routes:**")
+#             if 'origin' in flights_df.columns and 'destination' in flights_df.columns:
+#                 routes = flights_df[['origin', 'destination']].drop_duplicates()
+#                 for _, row in routes.iterrows():
+#                     st.caption(f"✈️ {row['origin']} → {row['destination']}")
+            
+#             st.write("**Hotel Cities:**")
+#             if 'city' in hotels_df.columns:
+#                 cities = hotels_df['city'].unique()
+#                 for city in cities:
+#                     st.caption(f" {city}")
+#         except Exception as e:
+#             st.error(f"Error: {e}")
+    
+#     if st.button("Clear Trip", use_container_width=True):
+#         clear_history(st.session_state.session_id)
+#         st.success("Cleared!")
+#         st.rerun()
+
+# st.title("Travel Planner")
+
+# if not st.session_state.history_loaded:
+#     with st.spinner("Loading..."):
+#         count = restore_chat_history(st.session_state.session_id)
+#     st.session_state.history_loaded = True
+
+# for message in st.session_state.messages:
+#     with st.chat_message(message["role"]):
+#         st.markdown(message["content"])
+
+# if prompt := st.chat_input("Where would you like to go?"):
+#     with st.chat_message("user"):
+#         st.markdown(prompt)
+    
+#     st.session_state.messages.append({"role": "user", "content": prompt})
+    
+#     try:
+#         response = run_agent(prompt, st.session_state.session_id)
+        
+#         with st.chat_message("assistant"):
+#             st.markdown(response)
+        
+#         st.session_state.messages.append({"role": "assistant", "content": response})
+        
+#     except Exception as e:
+#         error_msg = f" Error: {str(e)}"
+#         st.error(error_msg)
+#         st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 
 
