@@ -360,12 +360,30 @@ Stay focused, relevant, and helpful. Only discuss travel-related topics.
 summary_chain = RunnableSequence(summary_prompt | llm | StrOutputParser())
 
 
+def safe_parse_json(possible_json):
+    if isinstance(possible_json, dict):
+        return possible_json
+    
+    if not isinstance(possible_json, str):
+        return {}
 
+    # 🧹 Clean markdown code fences and trailing garbage
+    cleaned = re.sub(r"^```(?:json)?", "", possible_json.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"```$", "", cleaned.strip())
+    cleaned = cleaned.replace("undefined", "").strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"⚠️ JSON decode failed: {e}")
+        print(f"🔹 Cleaned string was: {cleaned[:200]}")
+        return {}
 
 def simulate_tool_calls(structured_json_str: str) -> Dict[str, Any]:
     """Simulate tool calls to fetch flight and hotel data"""
     try:
-        structured_data = json.loads(structured_json_str)
+        # structured_data = json.loads(structured_json_str)
+        structured_data = safe_parse_json(structured_json_str)
     except json.JSONDecodeError:
         structured_data = {}
 
